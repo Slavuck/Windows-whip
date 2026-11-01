@@ -12,7 +12,7 @@ Run `Whip.exe`. No installer, downloads, or administrator access are needed.
 - **Sadomaso**: move the handle and learn to aim the free tip. This is the first-run mode.
 - **Exact**: the tip is guided to the point where the mouse stopped.
 - Click the tray icon to change the mode, choose **EN / RU**, or open **Manual**.
-- The target icon opens **Training**. It currently links to Google as a placeholder; the practice site will be connected later.
+- The target icon opens [**Training**](https://test-whip.vercel.app/) in your default browser.
 - Right-click the tray icon for **Pause / Resume** and **Exit**.
 - **F8** coils the whip into a resting circle and pauses. Press it again to unfold and resume. **Escape** exits and is still passed to the active app.
 - Mouse buttons, scrolling, and dragging keep working. Holding a mouse button prevents automatic strikes.

@@ -23,7 +23,7 @@ namespace whip {
 constexpr UINT WM_WAKE=WM_APP+1,WM_EXIT_APP=WM_APP+2,WM_PAUSE_APP=WM_APP+3,WM_PANEL=WM_APP+4,WM_TRAY=WM_APP+5,WM_HOOKS=WM_APP+6;
 constexpr UINT_PTR frameTimer=1,monitorTimer=2;
 constexpr wchar_t appClass[]=L"WindowsWhip.Controller",panelClass[]=L"WindowsWhip.Panel",manualClass[]=L"WindowsWhip.Manual";
-constexpr wchar_t trainingUrl[]=L"https://www.google.com/";
+constexpr wchar_t trainingUrl[]=L"https://test-whip.vercel.app/";
 using Microsoft::WRL::ComPtr;
 
 class Input {

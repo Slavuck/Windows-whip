@@ -6,7 +6,7 @@ Manual uses the same dark blue-green surface, rounded edges, restrained border, 
 
 DirectWrite measures every paragraph using the same font sizes, line spacing, and available widths used for painting. The window grows vertically to show the complete author-provided text. If necessary, the layout adjusts width and type size to fit the work area while keeping its portrait shape. Automated checks cover both languages at 600, 720, 900, and 1080 DIP of available height.
 
-The Training button is an outlined target, with a 44 × 44 DIP hit area and a localized hover tooltip. Its current destination is https://www.google.com/. Replace the `trainingUrl` constant in `src/main.cpp` when the final practice site is supplied.
+The Training button is an outlined target, with a 44 × 44 DIP hit area and a localized hover tooltip. It opens https://test-whip.vercel.app/ in the default browser. The destination is set by the `trainingUrl` constant in `src/main.cpp`.
 
 F8 turns the visible lash into a resting spiral using a smooth easing curve. The pointer is restored immediately and all strikes are disabled before the animation begins. The resting circle does not follow the mouse or keep rendering frames.
 
