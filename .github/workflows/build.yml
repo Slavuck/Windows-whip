@@ -1,0 +1,12 @@
+name: Windows build
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and test without the local audio pack
+        shell: pwsh
+        run: ./tools/build.ps1 -Preset ci

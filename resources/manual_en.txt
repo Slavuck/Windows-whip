@@ -1,0 +1,15 @@
+Your cursor now has a whip. You're officially in charge of your desktop.
+
+Move the mouse fast, then stop sharply. The whip strikes and makes a left click. Your normal mouse buttons still work.
+
+Exact — the tip hits the point where your cursor stops. For those who came for results.
+
+Sadomaso — the handle follows your cursor, while the tip moves with its own momentum. Feel like a true ruler: improve your aim with every strike.
+
+F8 — take a break, or get back to teaching your desktop a lesson.
+
+Escape — close the app. You can also choose Exit in the tray menu. In full-screen apps, the whip automatically takes a break.
+
+Note: no matter how hard you strike, it won't make your apps run faster.
+
+Note two: works best with dark-themed apps.

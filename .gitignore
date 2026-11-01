@@ -1,0 +1,10 @@
+/Audio/
+/resources/audio/*.wav
+/resources/audio/manifest.json
+/build/
+/dist/
+/.vs/
+/.idea/
+__pycache__/
+*.user
+/Whip.ini

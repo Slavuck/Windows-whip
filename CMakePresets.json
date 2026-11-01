@@ -1,0 +1,10 @@
+{
+  "version": 5,
+  "configurePresets": [
+    {"name":"release","generator":"Ninja","binaryDir":"${sourceDir}/build/release","cacheVariables":{"CMAKE_BUILD_TYPE":"Release","CMAKE_EXPORT_COMPILE_COMMANDS":"ON","WHIP_WITH_AUDIO":"ON"}},
+    {"name":"debug","inherits":"release","binaryDir":"${sourceDir}/build/debug","cacheVariables":{"CMAKE_BUILD_TYPE":"Debug"}},
+    {"name":"ci","inherits":"release","binaryDir":"${sourceDir}/build/ci","cacheVariables":{"WHIP_WITH_AUDIO":"OFF"}}
+  ],
+  "buildPresets":[{"name":"release","configurePreset":"release"},{"name":"debug","configurePreset":"debug"},{"name":"ci","configurePreset":"ci"}],
+  "testPresets":[{"name":"release","configurePreset":"release","output":{"outputOnFailure":true}},{"name":"debug","configurePreset":"debug","output":{"outputOnFailure":true}},{"name":"ci","configurePreset":"ci","output":{"outputOnFailure":true}}]
+}
