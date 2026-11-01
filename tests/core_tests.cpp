@@ -22,7 +22,7 @@ int main() {
     }
     GestureDetector gesture;gesture.reset(0,{0,0});int swings=0,stops=0;
     for(int i=1;i<=100;++i) {
-        const double x=i<=10?i*18.0:180.0;
+        const double x=i<=10?i*24.0:240.0;
         if(auto event=gesture.sample(i*0.008,{x,0},false)) {if(event->kind==GestureEvent::Kind::Swing) ++swings;else ++stops;}
     }
     check(swings==1 && stops==1,"one fast stroke produces one swing and stop");
@@ -33,17 +33,19 @@ int main() {
     for(int i=1;i<=100;++i) if(gesture.sample(i*0.008,{i<10?i*18.0:180,0},true)) ++unexpected;
     check(unexpected==0,"dragging never arms");
     Whip rope;rope.reset({0,0});
+    check(Whip::solverSegments==6,"only six physical links drive the smooth curve");
     for(int i=0;i<1200;++i) rope.advance(Whip::step,{std::sin(i*0.01)*100,std::cos(i*0.01)*30},0);
     for(int i=0;i<1200;++i) rope.advance(Whip::step,{100,100},0);
     check(length(rope.points().front()-Vec2{100,100})<0.001,"Sadomaso fixes the handle");
     for(auto point:rope.points()) check(std::isfinite(point.x)&&std::isfinite(point.y),"finite XPBD state");
     double maximum=0;for(std::size_t i=0;i<Whip::segments;++i) maximum=std::max(maximum,length(rope.points()[i+1]-rope.points()[i]));
     check(maximum<Whip::segmentLength*1.2,"rope returns to its rest lengths");
+    const auto first=rope.points()[6]-rope.points()[0];
+    for(std::size_t i=1;i<6;++i) {const auto delta=rope.points()[i]-rope.points()[0];check(std::abs(first.x*delta.y-first.y*delta.x)<1e-5,"short handle remains straight and rigid");}
+    check(Whip::totalLength==768 && std::abs(Whip::handleLength-76.8)<1e-6,"20 percent shorter lash and 40 percent shorter handle");
+    check(rope.tip().y>rope.points()[0].y+560,"gravity pulls the settled lash downward");
     for(int i=0;i<700;++i) rope.advance(Whip::step,{100,100},std::min(1.0,i/400.0));
     check(length(rope.tip()-Vec2{100,100})<0.001,"Exact fixes the tip");
-    const auto original=rope.points();const double forecast=rope.forecastPeak({100,100},1);
-    check(forecast>=0.032 && forecast<=0.068,"forecast leaves room inside the 80 ms deadline");
-    check(rope.points()[10].x==original[10].x,"forecast does not mutate live physics");
     CoilAnimation coil;const auto live=rope.points();coil.begin(live,{100,100},true,10);
     const auto start=coil.sample(live,10),middle=coil.sample(live,10.32),end=coil.sample(live,11);
     check(length(start[20]-live[20])<1e-6,"coiling starts at the visible pose without a jump");
@@ -52,7 +54,13 @@ int main() {
     double minX=end[0].x,maxX=minX,minY=end[0].y,maxY=minY;
     for(auto point:end) {minX=std::min(minX,point.x);maxX=std::max(maxX,point.x);minY=std::min(minY,point.y);maxY=std::max(maxY,point.y);}
     check(maxX-minX<150 && maxY-minY<150,"paused whip forms a compact circular coil");
-    const auto parked=coil.sample(live,12);check(length(parked[40]-end[40])<1e-6,"paused coil is static");
+    const auto parked=coil.sample(live,12);check(length(parked[40]-end[40])<1e-6,"rest pose is stable without input");
+    const Vec2 mouse{220,180};for(int i=0;i<90;++i) coil.follow(mouse,1.0/144);
+    const auto carried=coil.sample(live,12);
+    check(length(carried[0]-mouse)<1e-6,"paused grip follows the cursor");
+    check(length(carried[3]-(mouse+Vec2{41.6,0}))<1e-6,"second paused pin follows the cursor");
+    check(length((carried[40]-end[40])-(mouse-Vec2{100,100}))>0.5,"free coil sags and moves independently of its pins");
+    for(auto point:carried) check(std::isfinite(point.x)&&std::isfinite(point.y),"finite carried coil");
     coil.begin(end,{100,100},false,12);
     check(length(coil.sample(live,12)[40]-end[40])<1e-6,"resume begins from the parked coil");
     check(length(coil.sample(live,13)[40]-live[40])<1e-6 && !coil.coiled(),"resume rejoins live physics");

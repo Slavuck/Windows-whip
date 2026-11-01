@@ -1,4 +1,5 @@
 #include "renderer.hpp"
+#include "lash_visual.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -70,22 +71,6 @@ bool Renderer::drawPoints(const std::array<Vec2,Whip::segments+1>& points,Vec2 f
     minX=std::floor(minX-12);minY=std::floor(minY-12);maxX+=12;maxY+=12;
     const UINT requiredWidth=static_cast<UINT>(std::ceil((maxX-minX)/64)*64),requiredHeight=static_cast<UINT>(std::ceil((maxY-minY)/64)*64);
     if(requiredWidth>8192 || requiredHeight>8192) return false;
-    std::vector<Vec2> curve;curve.reserve(257);
-    for(std::size_t i=0;i<Whip::segments;++i) {
-        const auto p0=points[i?i-1:0],p1=points[i],p2=points[i+1],p3=points[std::min(i+2,Whip::segments)];
-        for(int j=0;j<4;++j) {const double t=j/4.0,t2=t*t,t3=t2*t;curve.push_back((p1*2+(p2-p0)*t+(p0*2-p1*5+p2*4-p3)*t2+(p3-p0+(p1-p2)*3)*t3)*0.5);}
-    }
-    curve.push_back(points.back());std::vector<D2D1_POINT_2F> left,right;
-    for(std::size_t i=0;i<curve.size();++i) {
-        auto direction=curve[std::min(i+1,curve.size()-1)]-curve[i?i-1:0];const double d=std::max(length(direction),1e-6);
-        const double s=static_cast<double>(i)/(curve.size()-1),width=0.45+4.3*std::pow(1-s,1.45);
-        const auto normal=Vec2{-direction.y/d,direction.x/d}*width;
-        left.push_back(D2D1::Point2F(static_cast<float>(curve[i].x+normal.x-minX),static_cast<float>(curve[i].y+normal.y-minY)));
-        right.push_back(D2D1::Point2F(static_cast<float>(curve[i].x-normal.x-minX),static_cast<float>(curve[i].y-normal.y-minY)));
-    }
-    ComPtr<ID2D1PathGeometry> geometry;factory_->CreatePathGeometry(&geometry);ComPtr<ID2D1GeometrySink> sink;geometry->Open(&sink);
-    sink->BeginFigure(left.front(),D2D1_FIGURE_BEGIN_FILLED);sink->AddLines(left.data()+1,static_cast<UINT32>(left.size()-1));
-    std::reverse(right.begin(),right.end());sink->AddLines(right.data(),static_cast<UINT32>(right.size()));sink->EndFigure(D2D1_FIGURE_END_CLOSED);sink->Close();
     for(auto& surface:windows_) {
         const bool visible=maxX>=surface->monitor.left && minX<surface->monitor.right && maxY>=surface->monitor.top && minY<surface->monitor.bottom;
         if(!visible) {ShowWindow(surface->window,SW_HIDE);continue;}
@@ -100,18 +85,8 @@ bool Renderer::drawPoints(const std::array<Vec2,Whip::segments+1>& points,Vec2 f
         }
         auto* context=surface->context.Get();ComPtr<ID2D1SolidColorBrush> dark,light;
         context->CreateSolidColorBrush(D2D1::ColorF(0.035f,0.04f,0.05f),&dark);context->CreateSolidColorBrush(D2D1::ColorF(0.98f,0.98f,0.98f),&light);
-        context->BeginDraw();context->Clear(D2D1::ColorF(0,0,0,0));context->FillGeometry(geometry.Get(),dark.Get());context->DrawGeometry(geometry.Get(),light.Get(),1.35f);
-        // A distinct short grip, with a rim and fine wraps, stays integrated
-        // into the same live vector curve. The long lash keeps a clean taper.
-        for(std::size_t i=0;i<3;++i) {
-            const auto a=D2D1::Point2F(static_cast<float>(points[i].x-minX),static_cast<float>(points[i].y-minY));
-            const auto b=D2D1::Point2F(static_cast<float>(points[i+1].x-minX),static_cast<float>(points[i+1].y-minY));
-            context->DrawLine(a,b,light.Get(),13);context->DrawLine(a,b,dark.Get(),10.5f);
-            const auto delta=points[i+1]-points[i];const double distance=std::max(length(delta),0.001);const Vec2 normal{-delta.y/distance*4.8,delta.x/distance*4.8};
-            for(double t:{0.2,0.65}) {const auto center=mix(points[i],points[i+1],t);light->SetOpacity(0.55f);context->DrawLine(D2D1::Point2F(static_cast<float>(center.x-normal.x-minX),static_cast<float>(center.y-normal.y-minY)),D2D1::Point2F(static_cast<float>(center.x+normal.x-minX),static_cast<float>(center.y+normal.y-minY)),light.Get(),0.7f);light->SetOpacity(1);}
-        }
-        const auto cap=D2D1::Ellipse(D2D1::Point2F(static_cast<float>(points.front().x-minX),static_cast<float>(points.front().y-minY)),6,6);
-        context->FillEllipse(cap,dark.Get());context->DrawEllipse(cap,light.Get(),1.2f);
+        context->BeginDraw();context->Clear(D2D1::ColorF(0,0,0,0));
+        drawLash(context,factory_.Get(),points,style_,{minX,minY},1,true,&surface->raster);
         if(amount>0) {
             light->SetOpacity(static_cast<float>(amount));dark->SetOpacity(static_cast<float>(amount));
             const auto ring=D2D1::Ellipse(D2D1::Point2F(static_cast<float>(flash.x-minX),static_cast<float>(flash.y-minY)),static_cast<float>(4+(1-amount)*16),static_cast<float>(4+(1-amount)*16));

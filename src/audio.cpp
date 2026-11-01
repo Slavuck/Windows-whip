@@ -21,6 +21,9 @@ void Audio::play(bool hit,std::uint64_t id,double speed) {post({hit?Kind::Hit:Ki
 void Audio::cancel(std::uint64_t id) {post({Kind::Cancel,id,0});}
 void Audio::stopAll() {post({Kind::Stop,0,0});}
 void Audio::recover() {recovery_=true;SetEvent(wake_);}
+Audio::Stats Audio::stats() const {
+    Stats result;for(std::size_t i=0;i<3;++i) {result.loaded[i]=static_cast<unsigned>(samples_[i].data.size());result.submitted[i]=submitted_[i].load();result.observed[i]=observed_[i].load();}return result;
+}
 void STDMETHODCALLTYPE Audio::OnCriticalError(HRESULT) {recovery_=true;available_=false;SetEvent(wake_);}
 bool Audio::initialize() {
     if(samples_[0].data.empty()) return false;
@@ -37,13 +40,15 @@ bool Audio::initialize() {
 void Audio::release() {
     available_=false;
     if(engine_) engine_->UnregisterForCallbacks(this);
-    for(auto& voice:voices_) {if(voice.value) voice.value->DestroyVoice();voice.value=nullptr;voice.gesture=0;}
+    for(auto& voice:voices_) {if(voice.value) voice.value->DestroyVoice();voice.value=nullptr;voice.gesture=0;voice.sample=-1;voice.startSample=0;}
     if(master_) {master_->DestroyVoice();master_=nullptr;}
     engine_.Reset();running_=false;
 }
 void Audio::process(const Command& command) {
     if(command.kind==Kind::Stop || command.kind==Kind::Cancel) {
-        for(auto& voice:voices_) if(voice.value && (command.kind==Kind::Stop || voice.gesture==command.gesture)) {voice.value->Stop();voice.value->FlushSourceBuffers();voice.gesture=0;}
+        // Cancelling a predicted contact must not cut off the already audible
+        // whoosh. Only a real pause/exit stops both classes of voices.
+        for(auto& voice:voices_) if(voice.value && (command.kind==Kind::Stop || (voice.hit && voice.gesture==command.gesture))) {voice.value->Stop();voice.value->FlushSourceBuffers();voice.gesture=0;voice.sample=-1;}
         return;
     }
     if(!available_ || !engine_) return;
@@ -58,10 +63,11 @@ void Audio::process(const Command& command) {
     const float pitch=0.97f+0.06f*static_cast<float>((random_>>8)&0xffff)/65535.0f;
     const float power=static_cast<float>(std::clamp(command.speed/2400.0,0.35,1.0));
     selected->value->SetFrequencyRatio(pitch);
-    selected->value->SetVolume((command.kind==Kind::Hit?0.66f:0.38f)*std::sqrt(power));
+    selected->value->SetVolume((command.kind==Kind::Hit?0.66f:0.80f)*std::sqrt(power));
     XAUDIO2_BUFFER buffer{};buffer.AudioBytes=static_cast<UINT32>(pcm.data.size());buffer.pAudioData=pcm.data.data();buffer.Flags=XAUDIO2_END_OF_STREAM;
     selected->gesture=command.gesture;
-    if(SUCCEEDED(selected->value->SubmitSourceBuffer(&buffer))) selected->value->Start();
+    XAUDIO2_VOICE_STATE before{};selected->value->GetState(&before);
+    if(SUCCEEDED(selected->value->SubmitSourceBuffer(&buffer)) && SUCCEEDED(selected->value->Start())) {selected->sample=sample;selected->startSample=before.SamplesPlayed;++submitted_[static_cast<std::size_t>(sample)];}
 }
 void Audio::run() {
     const auto com=CoInitializeEx(nullptr,COINIT_MULTITHREADED);
@@ -73,6 +79,7 @@ void Audio::run() {
         std::deque<Command> batch;
         {std::lock_guard lock(mutex_);batch.swap(commands_);}
         for(const auto& command:batch) {process(command);if(command.kind==Kind::Hit || command.kind==Kind::Swing) lastPlay=now;}
+        for(auto& voice:voices_) if(voice.value && voice.sample>=0) {XAUDIO2_VOICE_STATE state{};voice.value->GetState(&state);if(state.SamplesPlayed>voice.startSample) {++observed_[static_cast<std::size_t>(voice.sample)];voice.sample=-1;}}
         if(engine_ && running_ && now-lastMeasure>0.5) {
             XAUDIO2_PERFORMANCE_DATA performance{};engine_->GetPerformanceData(&performance);
             const double estimate=static_cast<double>(performance.CurrentLatencyInSamples)/48000.0+0.010;

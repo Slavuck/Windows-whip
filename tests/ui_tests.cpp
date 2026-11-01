@@ -17,9 +17,10 @@ int main() {
     try {
         FlyoutView view;require(view.initialize(factory.Get(),write.Get()),"DirectWrite initialization");
         require(FlyoutView::panelHeight>FlyoutView::panelWidth,"settings flyout is portrait");
-        require(FlyoutView::panelHit(310,46)==UiAction::Training,"target icon hit area");
-        require(FlyoutView::panelHit(210,245)==UiAction::English && FlyoutView::panelHit(290,245)==UiAction::Russian,"language selector hit areas");
-        require(FlyoutView::panelHit(150,330)==UiAction::Manual && FlyoutView::panelHit(150,414)==UiAction::Pause,"manual and pause rows");
+        require(FlyoutView::panelHit(245,14)==UiAction::Training && FlyoutView::panelHit(306,74)==UiAction::Training,"training button owns the enlarged right header area");
+        require(FlyoutView::panelHit(80,116)==UiAction::ExactMode && FlyoutView::panelHit(240,116)==UiAction::SadomasoMode,"mode labels select their own capsule half");
+        require(FlyoutView::panelHit(200,178)==UiAction::English && FlyoutView::panelHit(264,178)==UiAction::Russian,"language selector hit areas");
+        require(FlyoutView::panelHit(150,240)==UiAction::Manual && FlyoutView::panelHit(150,305)==UiAction::Pause,"manual and pause rows");
         for(const auto* name:{"test_manual_en.txt","test_manual_ru.txt"}) {
             const auto text=readText(name);require(text.size()>400,"full author-provided Manual loaded");
             for(float height:{1080.0f,900.0f,720.0f,600.0f}) {
@@ -27,6 +28,7 @@ int main() {
                 require(layout.height<=height-32,"all Manual content fits without scrolling");
                 require(layout.height>layout.width,"Manual remains portrait");
                 require(layout.blocks.size()==8,"all eight author paragraphs are visible");
+                for(std::size_t i=0;i<layout.blocks.size();++i) require(layout.blocks[i].kind==(i>=6?ManualBlock::Kind::Note:ManualBlock::Kind::Body),"uniform body with bold notes only");
                 for(const auto& block:layout.blocks) require(block.y+block.height<=layout.height,"no Manual block is clipped");
             }
         }

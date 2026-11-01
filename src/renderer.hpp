@@ -20,10 +20,12 @@ public:
     Rect desktop() const;
     Rect secondaryMonitor() const;
     std::size_t monitorCount() const {return windows_.size();}
+    void style(WhipStyle value) {style_=value;}
 private:
     using Factory=Microsoft::WRL::ComPtr<ID2D1Factory1>;
     struct Surface {
         HWND window{};RECT monitor{};
+        Microsoft::WRL::ComPtr<ID2D1BitmapRenderTarget> raster;
         Microsoft::WRL::ComPtr<IDXGISwapChain1> swap;
         Microsoft::WRL::ComPtr<ID2D1DeviceContext> context;
         Microsoft::WRL::ComPtr<ID2D1Bitmap1> bitmap;
@@ -34,6 +36,7 @@ private:
     bool addMonitor(const RECT& monitor);
     HINSTANCE instance_{};
     bool inspectable_{};
+    WhipStyle style_=WhipStyle::Spring;
     Factory factory_;
     Microsoft::WRL::ComPtr<ID3D11Device> d3d_;
     Microsoft::WRL::ComPtr<ID2D1Device> device_;

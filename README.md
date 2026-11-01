@@ -8,18 +8,18 @@ A small Windows 11 app that turns a mouse gesture into a moving whip and a click
 
 Run `Whip.exe`. No installer, downloads, or administrator access are needed.
 
-- Move quickly, then stop sharply to strike. One stroke makes one left click.
+- Make a strong directed stroke, then stop sharply. A click occurs when the moving tip flies ahead and the cable unfolds. One stroke makes at most one left click. Gentle motion and residual rope oscillation do not strike.
 - **Sadomaso**: move the handle and learn to aim the free tip. This is the first-run mode.
 - **Exact**: the tip is guided to the point where the mouse stopped.
 - Click the tray icon to change the mode, choose **EN / RU**, or open **Manual**.
 - The target icon opens [**Training**](https://test-whip.vercel.app/) in your default browser.
 - Right-click the tray icon for **Pause / Resume** and **Exit**.
-- **F8** coils the whip into a resting circle and pauses. Press it again to unfold and resume. **Escape** exits and is still passed to the active app.
+- **F8** rolls the whip and pauses strikes. The roll follows the mouse on two pinned points while the free part swings with inertia. Press F8 again to unfold and resume. **Escape** exits and is still passed to the active app.
 - Mouse buttons, scrolling, and dragging keep working. Holding a mouse button prevents automatic strikes.
 
-The app pauses while its dark Fluent-style panel or Manual is open, while Windows is locked, and while the active window is full-screen. A normal maximized window does not count as full-screen. A manual pause remains in effect after leaving full-screen. The lash is 960 physical pixels long, with a tapered double contour and a distinct wrapped grip.
+The app pauses while its dark Fluent-style panel or Manual is open, while Windows is locked, and while the active window is full-screen. A normal maximized window does not count as full-screen. A manual pause remains in effect after leaving full-screen. The lash is 768 physical pixels long, with a nearly uniform cable, a shorter rigid handle 35% wider than the cable, and a clean white outline. The selected C design uses a three-pixel grid with no grip rings, seams, or wraps.
 
-Both flyouts use a portrait layout, vector icons, and Segoe UI Variable typography. Manual shows the complete text at once, without scrolling. Its measured layout adapts to the monitor's work area. See [UI design](docs/UI_DESIGN.md).
+The mode names sit inside one green segmented capsule. The enlarged Training target occupies the right side of the header. Both flyouts use a minimal portrait layout and Segoe UI Variable typography. Manual uses one larger body style; the final two notes are bold. Manual shows the complete text at once, without scrolling. Its measured layout adapts to the monitor's work area. See [UI design](docs/UI_DESIGN.md).
 
 ## Settings
 
@@ -61,7 +61,15 @@ The CI executable has no sound pack and is not a release build. Original audio f
 
 `Whip.exe --preview` opens a persistent test panel on the second (non-primary) monitor without hiding the cursor, installing input hooks, or injecting clicks. `--preview-lash` shows only the animated lash preview. `Whip.exe --smoke-test` runs a two-second graphics/audio check on that monitor with no hooks or clicks, then writes `smoke-report.json` next to that test executable. On a single-monitor computer these modes fall back to its only screen.
 
-`Whip.exe --animation-test` checks the coil, resting state, and unfold cycle on the same test monitor, without hooks or clicks. It writes a separate `animation-report.json`.
+`Whip.exe --animation-test` checks the coil, moving paused state, and unfold cycle on the same test monitor, without hooks or clicks. It writes a separate `animation-report.json`.
+
+`whip_motion_tests.exe` checks strong and weak motion, delayed pointer delivery, and the complete physical contact gate in Exact and Sadomaso at 60–240 updates per second. `whip_motion_tests.exe --report` prints the measured contact reach and delay as CSV. These tests never send desktop input.
+
+`Whip.exe --tray-test` checks repeated tray notifications, panel visibility, and the Manual handoff on the test monitor, using the production activation code and no input hooks or clicks.
+
+`Whip.exe --audio-test` plays both whooshes and the impact separately, then writes loaded/submitted/played buffer counts to `audio-report.json`. It requires the embedded sound pack and an audio output.
+
+`Whip.exe --design-preview` opens a safe A/B/C comparison on the test monitor. Space plays or freezes the identical movement applied to each profile. The selected C profile is the default in the app. `--design-snapshot` exports `Whip-variants.png` next to the EXE without opening a window.
 
 The author-provided Manual is kept in `resources/manual_en.txt` and `resources/manual_ru.txt` and embedded in the executable.
 

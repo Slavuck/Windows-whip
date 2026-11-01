@@ -19,13 +19,15 @@ public:
     void recover();
     double latency() const {return latency_.load();}
     bool available() const {return available_.load();}
+    struct Stats {std::array<unsigned,3> loaded{},submitted{},observed{};};
+    Stats stats() const;
     void STDMETHODCALLTYPE OnProcessingPassStart() override {}
     void STDMETHODCALLTYPE OnProcessingPassEnd() override {}
     void STDMETHODCALLTYPE OnCriticalError(HRESULT) override;
 private:
     enum class Kind {Hit,Swing,Cancel,Stop};
     struct Command {Kind kind;std::uint64_t gesture;double speed;};
-    struct Voice {IXAudio2SourceVoice* value{};std::uint64_t gesture{};bool hit{};};
+    struct Voice {IXAudio2SourceVoice* value{};std::uint64_t gesture{},startSample{};int sample=-1;bool hit{};};
     void post(Command command);
     void run();
     bool initialize();
@@ -42,7 +44,8 @@ private:
     std::atomic<bool> quit_{},recovery_{},available_{};
     std::atomic<double> latency_{0.020};
     unsigned random_=0x51324;
-    int lastSwing_=1;
+    int lastSwing_=2;
+    std::array<std::atomic<unsigned>,3> submitted_{},observed_{};
     bool running_{};
 };
 }

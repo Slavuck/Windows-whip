@@ -8,7 +8,7 @@
 #include <vector>
 
 namespace whip {
-enum class UiAction { None, Mode, English, Russian, Manual, Training, Pause, Close };
+enum class UiAction { None, Mode, ExactMode, SadomasoMode, English, Russian, Manual, Training, Pause, Close };
 struct UiState {
     Mode mode=Mode::Sadomaso;
     Language language=Language::English;
@@ -17,7 +17,7 @@ struct UiState {
     double modePosition=1;
 };
 struct ManualBlock {
-    enum class Kind { Lead, Body, Mode, Key, Note };
+    enum class Kind { Body, Note };
     Kind kind{};
     std::wstring title,text;
     float y{},height{},textHeight{};
@@ -28,7 +28,7 @@ struct ManualLayout {
 };
 class FlyoutView {
 public:
-    static constexpr float panelWidth=360,panelHeight=444;
+    static constexpr float panelWidth=320,panelHeight=344;
     bool initialize(ID2D1Factory* factory,IDWriteFactory* write);
     static UiAction panelHit(float x,float y);
     static UiAction manualHit(float x,float y,float width);
