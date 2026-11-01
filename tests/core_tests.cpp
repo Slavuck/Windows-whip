@@ -44,6 +44,18 @@ int main() {
     const auto original=rope.points();const double forecast=rope.forecastPeak({100,100},1);
     check(forecast>=0.032 && forecast<=0.068,"forecast leaves room inside the 80 ms deadline");
     check(rope.points()[10].x==original[10].x,"forecast does not mutate live physics");
+    CoilAnimation coil;const auto live=rope.points();coil.begin(live,{100,100},true,10);
+    const auto start=coil.sample(live,10),middle=coil.sample(live,10.32),end=coil.sample(live,11);
+    check(length(start[20]-live[20])<1e-6,"coiling starts at the visible pose without a jump");
+    check(coil.active(10.3) && !coil.active(11) && coil.coiled(),"coiling has a bounded transition and a stable paused state");
+    for(auto point:middle) check(std::isfinite(point.x)&&std::isfinite(point.y),"finite coiling geometry");
+    double minX=end[0].x,maxX=minX,minY=end[0].y,maxY=minY;
+    for(auto point:end) {minX=std::min(minX,point.x);maxX=std::max(maxX,point.x);minY=std::min(minY,point.y);maxY=std::max(maxY,point.y);}
+    check(maxX-minX<150 && maxY-minY<150,"paused whip forms a compact circular coil");
+    const auto parked=coil.sample(live,12);check(length(parked[40]-end[40])<1e-6,"paused coil is static");
+    coil.begin(end,{100,100},false,12);
+    check(length(coil.sample(live,12)[40]-end[40])<1e-6,"resume begins from the parked coil");
+    check(length(coil.sample(live,13)[40]-live[40])<1e-6 && !coil.coiled(),"resume rejoins live physics");
     std::vector<std::uint8_t> wav(48,0);
     const auto put=[&](int offset,unsigned value,int bytes){for(int i=0;i<bytes;++i) wav[static_cast<std::size_t>(offset+i)]=static_cast<std::uint8_t>(value>>(8*i));};
     std::memcpy(wav.data(),"RIFF",4);put(4,40,4);std::memcpy(wav.data()+8,"WAVEfmt ",8);put(16,16,4);put(20,1,2);put(22,1,2);put(24,48000,4);put(28,96000,4);put(32,2,2);put(34,16,2);std::memcpy(wav.data()+36,"data",4);put(40,4,4);

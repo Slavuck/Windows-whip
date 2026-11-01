@@ -56,4 +56,16 @@ private:
 };
 struct PcmWave { std::uint32_t rate{}; std::uint16_t channels{},bits{}; std::vector<std::uint8_t> data; };
 std::optional<PcmWave> parseWave(std::span<const std::uint8_t> bytes);
+class CoilAnimation {
+public:
+    using Points=std::array<Vec2,Whip::segments+1>;
+    void begin(const Points& visible,Vec2 handle,bool coil,double time);
+    Points sample(const Points& live,double time) const;
+    bool active(double time) const {return initialized_ && time<start_+duration_;}
+    bool coiled() const {return initialized_ && coiling_;}
+private:
+    Points source_{},coil_{};
+    double start_{},duration_{};
+    bool initialized_{},coiling_{};
+};
 }

@@ -14,6 +14,7 @@ public:
     bool initialize(HINSTANCE instance,bool inspectable=false);
     bool rebuild();
     bool draw(const Whip& whip,Vec2 flash,double flashAmount);
+    bool drawPoints(const std::array<Vec2,Whip::segments+1>& points,Vec2 flash={},double flashAmount=0);
     void hide();
     bool contains(Vec2 point) const;
     Rect desktop() const;

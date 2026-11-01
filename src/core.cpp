@@ -113,4 +113,29 @@ std::optional<PcmWave> parseWave(std::span<const std::uint8_t> bytes) {
     if(!format || wave.data.empty() || wave.data.size()%(wave.channels*2)!=0) return {};
     return wave;
 }
+void CoilAnimation::begin(const Points& visible,Vec2 handle,bool coil,double time) {
+    source_=visible;start_=time;duration_=coil?0.64:0.46;initialized_=true;coiling_=coil;
+    constexpr double pi=3.14159265358979323846;
+    const Vec2 center=handle+Vec2{52,68};
+    for(std::size_t i=0;i<=Whip::segments;++i) {
+        if(i<=3) coil_[i]=handle+Vec2{52.0*i/3,0};
+        else {
+            const double s=static_cast<double>(i-3)/(Whip::segments-3),angle=-pi/2+s*pi*5.3,radius=68-29*s;
+            coil_[i]=center+Vec2{std::cos(angle)*radius,std::sin(angle)*radius};
+        }
+    }
+}
+CoilAnimation::Points CoilAnimation::sample(const Points& live,double time) const {
+    if(!initialized_) return live;
+    const double t=std::clamp((time-start_)/duration_,0.0,1.0),ease=t*t*t*(10+t*(-15+6*t));
+    const auto& target=coiling_?coil_:live;Points result;
+    for(std::size_t i=0;i<result.size();++i) {
+        result[i]=mix(source_[i],target[i],ease);
+        if(coiling_ && t>0 && t<1) {
+            const double s=static_cast<double>(i)/Whip::segments,arc=std::sin(3.141592653589793*t)*std::sin(s*6.283185307+3*t)*12*s;
+            result[i]+=Vec2{arc,-arc*0.45};
+        }
+    }
+    return result;
+}
 }

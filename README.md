@@ -12,11 +12,14 @@ Run `Whip.exe`. No installer, downloads, or administrator access are needed.
 - **Sadomaso**: move the handle and learn to aim the free tip. This is the first-run mode.
 - **Exact**: the tip is guided to the point where the mouse stopped.
 - Click the tray icon to change the mode, choose **EN / RU**, or open **Manual**.
+- The target icon opens **Training**. It currently links to Google as a placeholder; the practice site will be connected later.
 - Right-click the tray icon for **Pause / Resume** and **Exit**.
-- **F8** pauses or resumes. **Escape** exits and is still passed to the active app.
+- **F8** coils the whip into a resting circle and pauses. Press it again to unfold and resume. **Escape** exits and is still passed to the active app.
 - Mouse buttons, scrolling, and dragging keep working. Holding a mouse button prevents automatic strikes.
 
 The app pauses while its dark Fluent-style panel or Manual is open, while Windows is locked, and while the active window is full-screen. A normal maximized window does not count as full-screen. A manual pause remains in effect after leaving full-screen. The lash is 960 physical pixels long, with a tapered double contour and a distinct wrapped grip.
+
+Both flyouts use a portrait layout, vector icons, and Segoe UI Variable typography. Manual shows the complete text at once, without scrolling. Its measured layout adapts to the monitor's work area. See [UI design](docs/UI_DESIGN.md).
 
 ## Settings
 
@@ -53,10 +56,12 @@ The CI executable has no sound pack and is not a release build. Original audio f
 - `src/`: simulation, gesture detection, Windows integration, vector rendering, audio.
 - `resources/`: executable resources, manifest, and Manual text.
 - `tools/`: reproducible audio preparation and build scripts.
-- `tests/`: recorded motion scenarios, physics, WAV parsing, coordinate mapping, and settings.
+- `tests/`: motion scenarios, physics, pause animation, WAV parsing, coordinate mapping, settings, and EN/RU text layout.
 - `.agents/skills/`: project-local CMake and MSVC instructions.
 
 `Whip.exe --preview` opens a persistent test panel on the second (non-primary) monitor without hiding the cursor, installing input hooks, or injecting clicks. `--preview-lash` shows only the animated lash preview. `Whip.exe --smoke-test` runs a two-second graphics/audio check on that monitor with no hooks or clicks, then writes `smoke-report.json` next to that test executable. On a single-monitor computer these modes fall back to its only screen.
+
+`Whip.exe --animation-test` checks the coil, resting state, and unfold cycle on the same test monitor, without hooks or clicks. It writes a separate `animation-report.json`.
 
 The author-provided Manual is kept in `resources/manual_en.txt` and `resources/manual_ru.txt` and embedded in the executable.
 

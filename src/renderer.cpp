@@ -61,7 +61,10 @@ bool Renderer::contains(Vec2 point) const {
     return std::any_of(windows_.begin(),windows_.end(),[point](const auto& s){return point.x>=s->monitor.left && point.x<s->monitor.right && point.y>=s->monitor.top && point.y<s->monitor.bottom;});
 }
 bool Renderer::draw(const Whip& whip,Vec2 flash,double amount) {
-    const auto& points=whip.points();double minX=points[0].x,minY=points[0].y,maxX=minX,maxY=minY;
+    return drawPoints(whip.points(),flash,amount);
+}
+bool Renderer::drawPoints(const std::array<Vec2,Whip::segments+1>& points,Vec2 flash,double amount) {
+    double minX=points[0].x,minY=points[0].y,maxX=minX,maxY=minY;
     for(auto p:points) {minX=std::min(minX,p.x);minY=std::min(minY,p.y);maxX=std::max(maxX,p.x);maxY=std::max(maxY,p.y);}
     if(amount>0) {minX=std::min(minX,flash.x-24);minY=std::min(minY,flash.y-24);maxX=std::max(maxX,flash.x+24);maxY=std::max(maxY,flash.y+24);}
     minX=std::floor(minX-12);minY=std::floor(minY-12);maxX+=12;maxY+=12;
