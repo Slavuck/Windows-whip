@@ -60,11 +60,13 @@ constexpr std::size_t M=N-1;                    // thong bars (bar 0 is the rigi
 // --- Hand and wrist ---------------------------------------------------------------------
 // The hand is a critically damped follower of the mouse. It removes pixel quantisation and gives
 // the hand a finite acceleration; the drawn handle is still translated to sit on the cursor.
-constexpr double handFrequency=220.0;           // rad/s
+constexpr double massScale=2.0;
+constexpr double inertiaTimeScale=1.4142135623730951; // sqrt(massScale), stiffness is unchanged
+constexpr double handFrequency=220.0/inertiaTimeScale; // rad/s: heavier hand response
 // A passive wrist spring rests downward. Only the moving hand, gravity and stored
 // elastic energy can drive the lash; cursor speed never rotates a powered target.
-constexpr double wristFrequency=8.0,wristDamping=1.0;
-constexpr double handleMass=260.0;              // equivalent point mass of the handle at its tip
+constexpr double wristFrequency=8.0/inertiaTimeScale,wristDamping=1.0;
+constexpr double handleMass=260.0*massScale;     // equivalent point mass of the handle at its tip
 
 // --- Whip body ---------------------------------------------------------------------------
 // Linear density relative to the belly: a thick plaited belly tapering to a thin fall and cracker.
@@ -83,7 +85,7 @@ struct Layout {
     std::array<double,N+1> mass{},inverse{},drag{},bend{};
     Layout() {
         for(std::size_t j=1;j<=M;++j) {
-            const double m=taper((static_cast<double>(j)-0.5)/M)*Whip::tailLinkLength;
+            const double m=massScale*taper((static_cast<double>(j)-0.5)/M)*Whip::tailLinkLength;
             mass[j]+=0.5*m;mass[j+1]+=0.5*m;
         }
         mass[1]+=handleMass;
@@ -117,9 +119,9 @@ double restLength(std::size_t bar) {return bar==0?Whip::handleLength:Whip::tailL
 }
 WhipTuning tuning(WhipStyle style) {
     //                          gravity damping  1/EI        width outline drag
-    if(style==WhipStyle::Heavy) return {4200,0.9,1/9.0e8,8.0,2.08,1.0e-4};
-    if(style==WhipStyle::Spring) return {3200,1.6,1/6.0e8,5.6,2.72,1.8e-4};
-    return {2800,1.4,1/3.5e8,4.4,1.76,1.5e-4};
+    if(style==WhipStyle::Heavy) return {4200,0.9,1/9.0e8,16.0,4.16,1.0e-4};
+    if(style==WhipStyle::Spring) return {3200,1.6,1/6.0e8,11.2,5.44,1.8e-4};
+    return {2800,1.4,1/3.5e8,8.8,3.52,1.5e-4};
 }
 void Whip::reset(Vec2 cursor) {
     for(std::size_t i=0;i<=solverSegments;++i) {nodes_[i]=cursor+Vec2{0,i?handleLength+(i-1)*tailLinkLength:0};velocity_[i]={};}

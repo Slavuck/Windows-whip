@@ -4,6 +4,8 @@ Results are updated by the developer after running the checks. Targets below are
 
 ## Local results — 2 November 2026
 
+Thickness/mass follow-up: all six headless suites and the synthetic replay pass again with doubled silhouette widths and particle masses. The rebuilt EXE includes all three sounds. The original passive-model figures below remain historical comparisons; the newer replay and hashes are in [heavy.csv](physics/heavy.csv) and [heavy-sources.json](physics/heavy-sources.json). No desktop animation review was performed.
+
 - The Release build passes six headless suites: core, gesture/contact, numerical physics, constraint energy, platform/settings, and DirectWrite UI layout. No windows, overlays, input hooks, clicks, or sound playback are started by these suites. The executable was rebuilt with all three embedded sounds.
 - 4,856 core assertions, 216 gesture/contact checks, and 230 algebraic constraint checks passed. Strong 480/640 px strokes are replayed at 60–240 Hz in both modes. Clicks require actual forward, outward tip motion; recognition alone cannot create contact.
 - The author's 49-bar, 960 Hz model replaces the earlier six-link solver. Its mass taper, gravity and air drag remain. Artificial lateral impulses and powered cursor-heading wrist targets are removed; a softer neck, mass-aware implicit angular damping and final velocity projection are added. Details, primary sources, measurements and limitations are in [physics](PHYSICS.md).

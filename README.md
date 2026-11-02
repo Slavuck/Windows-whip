@@ -21,7 +21,7 @@ The app pauses while its dark Fluent-style panel or Manual is open, while Window
 
 The mode names sit inside one green segmented capsule. The enlarged Training target occupies the right side of the header. Both flyouts use a minimal portrait layout and Segoe UI Variable typography. Manual uses one larger body style, with bold mode names and hotkeys; the final two notes are bold. Its Russian title is «Мануал». Manual shows the complete text at once, without scrolling. Its measured layout adapts to the monitor's work area. See [UI design](docs/UI_DESIGN.md).
 
-The free cable can cross itself. Its 49 rigid bars have a heavy belly, a much lighter tip, and a soft neck just after the handle. Length constraints and elastic bending produce the rolling loop and forward crack. Internal damping reduces rapid tip oscillations. The user's rigid-ring F8 simulation is preserved. See [physics](docs/PHYSICS.md) for the model and comparison method.
+The free cable can cross itself. Its 49 rigid bars have a heavy belly, a much lighter tip, and a soft neck just after the handle. Length constraints and elastic bending produce the rolling loop and forward crack. Internal damping reduces rapid tip oscillations. The whole silhouette is twice as thick, and particle masses are doubled, with slower hand and wrist response for a heavier feel. The user's rigid-ring F8 simulation is preserved. See [physics](docs/PHYSICS.md) for the model and comparison method.
 
 A click waits for physical contact. The current contact window is 180 ms after a confirmed stop; rollout can take roughly 100–180 ms. The previous 80 ms deadline is not a promise for this model. A folded or trailing tip still produces no click.
 

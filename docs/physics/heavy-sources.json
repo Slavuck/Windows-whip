@@ -1,0 +1,10 @@
+{
+  "date": "2026-11-02",
+  "sources": {
+    "core.cpp": "8898ebcb15747ab896d35474017b40b3d0729f1fa7278bce434b0af7473ff6d3",
+    "core.hpp": "18370f69e6a90e88d85894aeaab120b36c4f05b99ef5ef7af2b8de617d7999e7"
+  },
+  "harness_sha256": "5377b86a9df0fc32dcbd9b1e5d70fc5cf5a47a0932c2c8107b6f3e5c5dbe8524",
+  "check_exit_code": 0,
+  "compiler": "MSVC 19.51 x64 C++20 /O2"
+}

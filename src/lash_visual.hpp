@@ -7,6 +7,10 @@
 
 namespace whip {
 using LashBitmap=Microsoft::WRL::ComPtr<ID2D1BitmapRenderTarget>;
+inline double lashPadding(WhipStyle style,double widthScale=1) {
+    const auto look=tuning(style);
+    return (look.bodyWidth+2*look.outline)*Whip::handleWidthRatio*0.5*widthScale+6;
+}
 inline void paintLashVector(ID2D1RenderTarget* target,ID2D1Factory* factory,const std::array<Vec2,Whip::segments+1>& points,WhipStyle style,Vec2 origin,float scale,float widthScale) {
     using Microsoft::WRL::ComPtr;const auto look=tuning(style);
     std::array<Vec2,Whip::segments+1> left{},right{};
@@ -46,8 +50,9 @@ inline void drawLash(ID2D1RenderTarget* target,ID2D1Factory* factory,const std::
     constexpr float pixel=3;
     double minX=1e10,minY=minX,maxX=-minX,maxY=-minX;
     for(auto p:points) {p=(p-origin)*scale;minX=std::min(minX,p.x);minY=std::min(minY,p.y);maxX=std::max(maxX,p.x);maxY=std::max(maxY,p.y);}
-    const float x=static_cast<float>(std::floor((minX-14*widthScale)/pixel)*pixel),y=static_cast<float>(std::floor((minY-14*widthScale)/pixel)*pixel);
-    const auto width=static_cast<UINT32>(std::ceil((maxX+14*widthScale-x)/pixel)),height=static_cast<UINT32>(std::ceil((maxY+14*widthScale-y)/pixel));
+    const double padding=lashPadding(style,widthScale);
+    const float x=static_cast<float>(std::floor((minX-padding)/pixel)*pixel),y=static_cast<float>(std::floor((minY-padding)/pixel)*pixel);
+    const auto width=static_cast<UINT32>(std::ceil((maxX+padding-x)/pixel)),height=static_cast<UINT32>(std::ceil((maxY+padding-y)/pixel));
     LashBitmap local;auto& raster=cache?*cache:local;
     if(raster) {const auto size=raster->GetPixelSize();if(size.width<width || size.height<height) raster.Reset();}
     if(!raster && FAILED(target->CreateCompatibleRenderTarget(D2D1::SizeF(static_cast<float>(width),static_cast<float>(height)),D2D1::SizeU(width,height),D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,D2D1_ALPHA_MODE_PREMULTIPLIED),D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE,&raster))) return;

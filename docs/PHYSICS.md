@@ -1,5 +1,11 @@
 # Physics changes and numerical evidence
 
+## Thickness and mass update
+
+The entire silhouette is now twice as wide, including the outline and rigid handle; length and handle-to-cable width ratio stay the same. Drawing buffers use width-dependent padding to avoid clipping the thicker grip. All particle masses are doubled while bending stiffness stays fixed. Hand and wrist frequencies are divided by sqrt(2), giving a slower inertial response. They are now 155.56 and 5.66 rad/s respectively. Internal damping remains mass-aware. All six local headless suites and the numerical replay pass. F8 uses the same doubled silhouette.
+
+The detailed before/after measurements below and `physics/current.csv` record the preceding passive-wrist revision, before this thickness/mass update. The latest heavier-model replay is [heavy.csv](physics/heavy.csv), with source hashes in [heavy-sources.json](physics/heavy-sources.json). Subjective perceived weight has not been measured.
+
 The [author-supplied 49-bar model](https://github.com/Slavuck/Windows-whip/commit/e15996b8e68d8d3ec348ee3633d44ac0e131a2d6) is the baseline for this change. The older six-link XPBD implementation is not restored. Its coarse links and driven handle could resemble a rod after a stop. The author's replacement introduced a much more useful rolling loop: a direct inextensible chain, strong mass taper, mass-dependent bending, directional air drag, and a wrist that can yield to the lash. These are retained.
 
 `compare.png` is a visual reference, not measured coordinate data. The numerical replay reproduces its stated input: 260 physical pixels right over 100 ms, starting at 0.60 s and stopping at 0.70 s. It exports the same eight sample times. The comparison baseline is the author's saved source, not the old top row in that image.

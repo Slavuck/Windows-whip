@@ -68,7 +68,8 @@ bool Renderer::drawPoints(const std::array<Vec2,Whip::segments+1>& points,Vec2 f
     double minX=points[0].x,minY=points[0].y,maxX=minX,maxY=minY;
     for(auto p:points) {minX=std::min(minX,p.x);minY=std::min(minY,p.y);maxX=std::max(maxX,p.x);maxY=std::max(maxY,p.y);}
     if(amount>0) {minX=std::min(minX,flash.x-24);minY=std::min(minY,flash.y-24);maxX=std::max(maxX,flash.x+24);maxY=std::max(maxY,flash.y+24);}
-    minX=std::floor(minX-12);minY=std::floor(minY-12);maxX+=12;maxY+=12;
+    const double padding=lashPadding(style_);
+    minX=std::floor(minX-padding);minY=std::floor(minY-padding);maxX+=padding;maxY+=padding;
     const UINT requiredWidth=static_cast<UINT>(std::ceil((maxX-minX)/64)*64),requiredHeight=static_cast<UINT>(std::ceil((maxY-minY)/64)*64);
     if(requiredWidth>8192 || requiredHeight>8192) return false;
     for(auto& surface:windows_) {
