@@ -14,14 +14,16 @@ Run `Whip.exe`. No installer, downloads, or administrator access are needed.
 - Click the tray icon to change the mode, choose **EN / RU**, or open **Manual**.
 - The target icon opens [**Training**](https://test-whip.vercel.app/) in your default browser.
 - Right-click the tray icon for **Pause / Resume** and **Exit**.
-- **F8** rolls the whip and pauses strikes. The roll follows the mouse on two pinned points while the free part swings with inertia. Press F8 again to unfold and resume. **Escape** exits and is still passed to the active app.
+- **F8** rolls the whip and pauses strikes. The roll follows the mouse as a rigid ring swinging from the handle like a pendulum. Press F8 again to unfold and resume. **Escape** exits and is still passed to the active app.
 - Mouse buttons, scrolling, and dragging keep working. Holding a mouse button prevents automatic strikes.
 
 The app pauses while its dark Fluent-style panel or Manual is open, while Windows is locked, and while the active window is full-screen. A normal maximized window does not count as full-screen. A manual pause remains in effect after leaving full-screen. The lash is 768 physical pixels long, with a nearly uniform cable, a 67.6-pixel rigid handle widened a further 15% (55.25% wider than the cable), and a clean white outline. The selected C design uses a three-pixel grid with no grip rings, seams, or wraps.
 
 The mode names sit inside one green segmented capsule. The enlarged Training target occupies the right side of the header. Both flyouts use a minimal portrait layout and Segoe UI Variable typography. Manual uses one larger body style, with bold mode names and hotkeys; the final two notes are bold. Its Russian title is «Мануал». Manual shows the complete text at once, without scrolling. Its measured layout adapts to the monitor's work area. See [UI design](docs/UI_DESIGN.md).
 
-The free cable can cross itself. Elastic straightening and a weak particle-clustering guard discourage tight knots; the F8 roll simulation is preserved. Strikes require a faster mouse stroke.
+The free cable can cross itself. Its 49 rigid bars have a heavy belly, a much lighter tip, and a soft neck just after the handle. Length constraints and elastic bending produce the rolling loop and forward crack. Internal damping reduces rapid tip oscillations. The user's rigid-ring F8 simulation is preserved. See [physics](docs/PHYSICS.md) for the model and comparison method.
+
+A click waits for physical contact. The current contact window is 180 ms after a confirmed stop; rollout can take roughly 100–180 ms. The previous 80 ms deadline is not a promise for this model. A folded or trailing tip still produces no click.
 
 ## Settings
 
@@ -51,9 +53,27 @@ For a code-only CI build:
 ./tools/build.ps1 -Preset ci -Headless
 ```
 
-`-Headless` runs only core, gesture/contact, settings, and DirectWrite layout checks. It opens no windows and does not play sounds or install input hooks. Graphical diagnostics remain available separately.
+`-Headless` runs the core, gesture/contact, numerical physics, constraint energy, settings, and DirectWrite layout checks. It opens no windows and does not play sounds or install input hooks. Graphical diagnostics remain available separately.
 
 The CI executable has no sound pack and is not a release build. Original audio files and separate prepared WAVs are local build inputs and are not committed. See [audio credits](AUDIO_CREDITS.md).
+
+The physics core is portable C++20. To compile it and replay synthetic mouse paths without starting the application:
+
+```sh
+python tools/test_physics.py --check
+```
+
+The script uses MSVC on Windows or a GNU/Clang C++20 compiler on Linux. It writes source hashes, numerical metrics, and motion traces under `build/physics-headless/`. To select GCC 13 on Linux, use `CXX=g++-13 python3 tools/test_physics.py --check`.
+
+For a Linux CMake build with GCC 13 or another C++20 compiler:
+
+```sh
+cmake -S . -B build/linux -DCMAKE_BUILD_TYPE=Release -DWHIP_WITH_AUDIO=OFF
+cmake --build build/linux
+ctest --test-dir build/linux --output-on-failure
+```
+
+These Linux targets contain no Win32 overlay or audio engine. Numerical checks cover stability and response; the user judges animation feel. Current measurements and their limits are recorded in [verification](docs/VERIFICATION.md).
 
 ## Development
 
@@ -67,7 +87,7 @@ The CI executable has no sound pack and is not a release build. Original audio f
 
 `Whip.exe --animation-test` checks the coil, moving paused state, and unfold cycle on the same test monitor, without hooks or clicks. It writes a separate `animation-report.json`.
 
-`whip_motion_tests.exe` checks strong and weak motion, delayed pointer delivery, and the complete physical contact gate in Exact and Sadomaso at 60–240 updates per second. `whip_motion_tests.exe --report` prints the measured contact reach and delay as CSV. These tests never send desktop input.
+`whip_motion_tests.exe` checks strong and weak motion, delayed pointer delivery, and the physical contact gate in Exact and Sadomaso at different update rates. `whip_motion_tests.exe --report` prints measured contact reach and delay as CSV. The portable physics replay adds synthetic trajectories and numerical diagnostics. These tests never send desktop input.
 
 `Whip.exe --tray-test` checks repeated tray notifications, panel visibility, and the Manual handoff on the test monitor, using the production activation code and no input hooks or clicks.
 

@@ -1,8 +1,30 @@
-name: Windows build
+name: Build and numerical checks
 on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
 jobs:
+  linux-core:
+    runs-on: ubuntu-24.04
+    env:
+      CXX: g++-13
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure the portable C++20 core
+        run: cmake -S . -B build/linux -DCMAKE_BUILD_TYPE=Release -DWHIP_WITH_AUDIO=OFF
+      - name: Build
+        run: cmake --build build/linux --parallel 2
+      - name: Numerical and gesture tests (no desktop input)
+        run: ctest --test-dir build/linux --output-on-failure
+      - name: Export synthetic mouse replays
+        run: python3 tools/test_physics.py --label linux --check
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-physics
+          path: |
+            build/physics-headless/linux/metrics.csv
+            build/physics-headless/linux/manifest.json
+            build/physics-headless/linux/traces/
   build:
     runs-on: windows-2025
     steps:

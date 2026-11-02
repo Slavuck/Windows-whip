@@ -5,7 +5,6 @@
 #include <limits>
 
 namespace whip {
-namespace { constexpr double contactWindow=0.18; } // a real lash needs ~100-150 ms after the hand stops to roll out and crack
 double length(Vec2 v) { return std::hypot(v.x,v.y); }
 double dot(Vec2 a,Vec2 b) { return a.x*b.x+a.y*b.y; }
 Vec2 mix(Vec2 a,Vec2 b,double t) { return a*(1-t)+b*t; }
@@ -54,7 +53,7 @@ std::optional<GestureEvent> GestureDetector::sample(double t,Vec2 p,bool held) {
     return {};
 }
 namespace {
-constexpr double pi=3.14159265358979323846;
+constexpr double physicsPi=3.14159265358979323846;
 constexpr std::size_t N=Whip::solverSegments;   // bars; nodes are 0..N
 constexpr std::size_t M=N-1;                    // thong bars (bar 0 is the rigid handle)
 
@@ -62,15 +61,16 @@ constexpr std::size_t M=N-1;                    // thong bars (bar 0 is the rigi
 // The hand is a critically damped follower of the mouse. It removes pixel quantisation and gives
 // the hand a finite acceleration; the drawn handle is still translated to sit on the cursor.
 constexpr double handFrequency=220.0;           // rad/s
-// The wrist is a rotational spring/damper that aims the handle along the stroke. The lash can pull on it.
-constexpr double wristFrequency=70.0,wristDamping=0.9;
+// A passive wrist spring rests downward. Only the moving hand, gravity and stored
+// elastic energy can drive the lash; cursor speed never rotates a powered target.
+constexpr double wristFrequency=8.0,wristDamping=1.0;
 constexpr double handleMass=260.0;              // equivalent point mass of the handle at its tip
 
 // --- Whip body ---------------------------------------------------------------------------
 // Linear density relative to the belly: a thick plaited belly tapering to a thin fall and cracker.
 constexpr double tipDensity=0.04,taperPower=2.4;
 constexpr double tangentialDrag=0.06;           // along-the-rope drag relative to across-the-rope drag
-constexpr double bendDamping=0.006;             // s, internal friction of the braid
+constexpr double bellyDampingRatio=0.45,tipDampingRatio=1.10;
 constexpr double crackSpeed=9000;               // px/s, drag doubles here: the crack of a real whip radiates a large part of its energy
 constexpr double speedLimit=90000;              // px/s, numerical safety net only
 
@@ -80,9 +80,8 @@ Vec2 perp(Vec2 v) {return {-v.y,v.x};}
 Vec2 unit(Vec2 v) {const double l=length(v);return l>1e-9?v/l:Vec2{0,1};}
 
 struct Layout {
-    std::array<double,N+1> inverse{},drag{},bend{};
+    std::array<double,N+1> mass{},inverse{},drag{},bend{};
     Layout() {
-        std::array<double,N+1> mass{};
         for(std::size_t j=1;j<=M;++j) {
             const double m=taper((static_cast<double>(j)-0.5)/M)*Whip::tailLinkLength;
             mass[j]+=0.5*m;mass[j+1]+=0.5*m;
@@ -92,7 +91,9 @@ struct Layout {
             const double density=taper(static_cast<double>(i-1)/M);
             inverse[i]=1/mass[i];
             drag[i]=i==1?0.3:1/std::sqrt(density); // thinner rope: more drag per unit mass
-            bend[i]=density*density;               // EI grows with the fourth power of the radius, mass with the second
+            const double u=std::clamp((i-1)*Whip::tailLinkLength/Whip::handleLength,0.0,1.0);
+            const double neck=0.25+0.75*u*u*(3-2*u);
+            bend[i]=density*density*neck; // a soft neck, then EI proportional to radius^4
         }
     }
 };
@@ -122,7 +123,7 @@ WhipTuning tuning(WhipStyle style) {
 }
 void Whip::reset(Vec2 cursor) {
     for(std::size_t i=0;i<=solverSegments;++i) {nodes_[i]=cursor+Vec2{0,i?handleLength+(i-1)*tailLinkLength:0};velocity_[i]={};}
-    hand_=control_=cursor;handVelocity_=tipVelocity_={};controlAttachment_=0;targetAngle_=pi/2;quietTime_=0;accumulator_=tipSpeed_=0;
+    hand_=control_=cursor;handVelocity_=tipVelocity_={};controlAttachment_=0;accumulator_=tipSpeed_=0;
     updateCurve(cursor,0);
 }
 void Whip::advance(double elapsed,Vec2 cursor,double attachment) {
@@ -146,9 +147,6 @@ void Whip::solveVelocities() {
     solveChain(dir,rhs,inverse,impulse);
     for(std::size_t i=0;i<N;++i) {
         velocity_[i+1]+=dir[i]*(impulse[i]*inverse[i+1]);velocity_[i]-=dir[i]*(impulse[i]*inverse[i]);
-        // A rope cannot push. A perfectly straight chain would otherwise act as a rigid rod, so a
-        // compressed bar gets a tiny sideways imperfection and buckles like a real rope does.
-        if(i>0 && impulse[i]>0) velocity_[i+1]+=perp(dir[i])*(((i*2654435761u)>>7&1u?1.0:-1.0)*0.03*impulse[i]*inverse[i+1]);
     }
 }
 void Whip::solvePositions(int iterations) {
@@ -172,23 +170,22 @@ void Whip::solvePositions(int iterations) {
 void Whip::integrate(Vec2 cursor) {
     const auto& lay=layout();const auto cfg=tuning(style_);constexpr double dt=step;
     // 1. The hand follows the mouse and carries node 0.
-    handVelocity_+=((cursor-hand_)*(handFrequency*handFrequency)-handVelocity_*(2*handFrequency))*dt;hand_+=handVelocity_*dt;
+    // Exact critically damped update for this substep's held target. It remains
+    // stable without introducing derivative noise from the cursor grid.
+    const Vec2 offset=hand_-cursor,decayTerm=handVelocity_+offset*handFrequency;
+    const double decay=std::exp(-handFrequency*dt);
+    hand_=cursor+(offset+decayTerm*dt)*decay;
+    handVelocity_=(handVelocity_-decayTerm*(handFrequency*dt))*decay;
     nodes_[0]=hand_;velocity_[0]=handVelocity_;
-    // 2. The wrist aims the handle along the stroke; at rest the lash simply hangs from it.
-    const double handSpeed=length(handVelocity_);
-    if(handSpeed>350) {
-        const double desired=std::atan2(handVelocity_.y,handVelocity_.x);
-        if(handSpeed>=1400) targetAngle_=desired;
-        else targetAngle_+=std::remainder(desired-targetAngle_,2*pi)*std::pow(handSpeed/2000,2)*(1-std::exp(-10*dt));
-        quietTime_=0;
-    } else quietTime_+=dt;
-    if(quietTime_>0.8) targetAngle_+=std::remainder(pi/2-targetAngle_,2*pi)*(1-std::exp(-4*dt));
-    std::array<Vec2,N+1> acceleration{};
-    for(std::size_t i=1;i<=N;++i) acceleration[i]={0,cfg.gravity};
+    // 2. A fixed-rest-angle wrist can yield to the rope and dissipate motion.
+    // Its equilibrium never chases velocity or recentres on a timer.
+    for(std::size_t i=1;i<=N;++i) velocity_[i].y+=cfg.gravity*dt;
     {
         const Vec2 r=nodes_[1]-hand_;const double radius2=std::max(dot(r,r),1e-9);
-        const double error=std::remainder(targetAngle_-std::atan2(r.y,r.x),2*pi),rate=cross(r,velocity_[1]-handVelocity_)/radius2;
-        acceleration[1]+=perp(r)*(wristFrequency*wristFrequency*error-2*wristDamping*wristFrequency*rate);
+        const double error=std::remainder(physicsPi/2-std::atan2(r.y,r.x),2*physicsPi),rate=cross(r,velocity_[1]-handVelocity_)/radius2;
+        const double w=lay.inverse[1]/radius2,k=wristFrequency*wristFrequency/w,c=2*wristDamping*wristFrequency/w;
+        const double impulse=dt*(k*error-(c+dt*k)*rate)/(1+dt*(c+dt*k)*w);
+        velocity_[1]+=perp(r)*(impulse*lay.inverse[1]/radius2);
     }
     // 3. Bending: a torsional spring with internal friction at every joint of the lash.
     const double stiffness=1/cfg.bendCompliance;
@@ -198,10 +195,15 @@ void Whip::integrate(Vec2 cursor) {
         const double angle=std::atan2(cross(d1,d2),dot(d1,d2));
         const Vec2 ga=perp(d1)/(l1*l1),gc=perp(d2)/(l2*l2),gb=(ga+gc)*-1.0;
         const double rate=dot(ga,velocity_[i-1])+dot(gb,velocity_[i])+dot(gc,velocity_[i+1]);
-        const double k=stiffness*lay.bend[i]/(0.5*(l1+l2)),torque=-k*(angle+bendDamping*rate);
-        acceleration[i-1]+=ga*(torque*lay.inverse[i-1]);acceleration[i]+=gb*(torque*lay.inverse[i]);acceleration[i+1]+=gc*(torque*lay.inverse[i+1]);
+        const double k=stiffness*lay.bend[i]/(0.5*(l1+l2));
+        const double w=lay.inverse[i-1]*dot(ga,ga)+lay.inverse[i]*dot(gb,gb)+lay.inverse[i+1]*dot(gc,gc);
+        const double s=static_cast<double>(i-1)/M,zeta=bellyDampingRatio+(tipDampingRatio-bellyDampingRatio)*s*s;
+        const double c=2*zeta*std::sqrt(k/std::max(w,1e-12));
+        // Backward-Euler angular spring/dashpot with effective rotational
+        // inertia 1/w; damping stays controlled even at the light tip.
+        const double impulse=-dt*(k*angle+(c+dt*k)*rate)/(1+dt*(c+dt*k)*w);
+        velocity_[i-1]+=ga*(impulse*lay.inverse[i-1]);velocity_[i]+=gb*(impulse*lay.inverse[i]);velocity_[i+1]+=gc*(impulse*lay.inverse[i+1]);
     }
-    for(std::size_t i=1;i<=N;++i) velocity_[i]+=acceleration[i]*dt;
     // 4. Air: quadratic drag, much stronger across the rope than along it (implicit, unconditionally stable).
     for(std::size_t i=1;i<=N;++i) {
         const Vec2 tangent=unit(nodes_[std::min(i+1,N)]-nodes_[i-1]);
@@ -218,6 +220,7 @@ void Whip::integrate(Vec2 cursor) {
     for(std::size_t i=1;i<=N;++i) {
         const double v=length(velocity_[i]);if(v>speedLimit) velocity_[i]=velocity_[i]*(speedLimit/v);
     }
+    solveVelocities(); // RATTLE: restore tangent velocities at the corrected positions.
     if(!std::isfinite(nodes_[N].x+nodes_[N].y+velocity_[N].x+velocity_[N].y+nodes_[1].x+nodes_[1].y)) {reset(cursor);return;}
     tipVelocity_=velocity_[N];tipSpeed_=length(tipVelocity_);
 }
@@ -253,6 +256,11 @@ double Whip::stretchError() const {
     for(std::size_t i=0;i<solverSegments;++i) worst=std::max(worst,std::abs(length(nodes_[i+1]-nodes_[i])-restLength(i))/restLength(i));
     return worst;
 }
+const std::array<double,Whip::solverSegments+1>& Whip::particleMasses() {return layout().mass;}
+double Whip::constraintVelocityError() const {
+    double worst=0;for(std::size_t i=0;i<N;++i) worst=std::max(worst,std::abs(dot(unit(nodes_[i+1]-nodes_[i]),velocity_[i+1]-velocity_[i])));
+    return worst;
+}
 void ContactValidator::arm(const GestureEvent& stop,Mode mode) {
     cancel();
     if(stop.kind!=GestureEvent::Kind::Stop || stop.id<=consumed_ || stop.speed<GestureDetector::peakSpeed || !std::isfinite(stop.speed) || std::abs(length(stop.direction)-1)>0.01 || !std::isfinite(stop.time) || !std::isfinite(stop.point.x) || !std::isfinite(stop.point.y)) return;
@@ -265,7 +273,7 @@ std::optional<ImpactEvent> ContactValidator::update(double time,const Whip& whip
     const double reach=length(offset),forward=dot(velocity,stop_->direction);
     // This is a physical contact gate, not a target radius or a tip-position
     // correction. A folded, trailing, stationary or inward-moving tip cannot click.
-    if(reach<Whip::totalLength*0.80 || reach>Whip::totalLength*1.06 || dot(offset,stop_->direction)<Whip::totalLength*0.30 || forward<2200 || dot(velocity,offset)<=0) return {};
+    if(reach<Whip::totalLength*minReachRatio || reach>Whip::totalLength*maxReachRatio || dot(offset,stop_->direction)<Whip::totalLength*minProjectionRatio || forward<minForwardSpeed || dot(velocity,offset)<=0) return {};
     const auto stop=*stop_;cancel();
     return ImpactEvent{stop.id,time,stop.time,length(velocity),mode_==Mode::Exact?stop.point:whip.tip()};
 }

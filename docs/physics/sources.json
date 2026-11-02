@@ -1,0 +1,16 @@
+{
+  "date": "2026-11-02",
+  "compiler": "MSVC 19.51, x64, /O2 /std:c++20 /MT",
+  "note": "SHA-256 of the local source bytes compiled by the replay; checkout line endings may differ.",
+  "baseline": {
+    "core.cpp": "02d6b46cd6edaca5e68f5e2c9bf3dc8ce781809c9e47e5813e3edd7839e26a4b",
+    "core.hpp": "f117ce78e70c499a5a11ef6964445132b89b485742e8ef5c2688a2fbbada7246"
+  },
+  "current": {
+    "core.cpp": "03de6df0f83e5976d05418067c5538dc0ed578d64b6c28eeea8b8f4b1f4b29c1",
+    "core.hpp": "18370f69e6a90e88d85894aeaab120b36c4f05b99ef5ef7af2b8de617d7999e7"
+  },
+  "harness_sha256": "5377b86a9df0fc32dcbd9b1e5d70fc5cf5a47a0932c2c8107b6f3e5c5dbe8524",
+  "baseline_exit_code": 0,
+  "current_exit_code": 0
+}

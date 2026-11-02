@@ -33,18 +33,20 @@ int main() {
     for(int i=1;i<=100;++i) if(gesture.sample(i*0.008,{i<10?i*18.0:180,0},true)) ++unexpected;
     check(unexpected==0,"dragging never arms");
     Whip rope;rope.reset({0,0});
-    check(Whip::solverSegments==6,"only six physical links drive the smooth curve");
-    for(int i=0;i<1200;++i) rope.advance(Whip::step,{std::sin(i*0.01)*100,std::cos(i*0.01)*30},0);
-    for(int i=0;i<1200;++i) rope.advance(Whip::step,{100,100},0);
+    check(Whip::solverSegments==49,"one rigid handle and 48 inextensible tail bars");
+    // Specify durations rather than tying settling to an old solver's step count.
+    for(double t=0;t<2.5;t+=Whip::step) rope.advance(Whip::step,{std::sin(t*4)*100,std::cos(t*4)*30},0);
+    for(double t=0;t<6;t+=Whip::step) rope.advance(Whip::step,{100,100},0);
     check(length(rope.points().front()-Vec2{100,100})<0.001,"Sadomaso fixes the handle");
-    for(auto point:rope.points()) check(std::isfinite(point.x)&&std::isfinite(point.y),"finite XPBD state");
-    double maximum=0;for(std::size_t i=0;i<Whip::segments;++i) maximum=std::max(maximum,length(rope.points()[i+1]-rope.points()[i]));
-    check(maximum<Whip::segmentLength*1.2,"rope returns to its rest lengths");
+    for(auto point:rope.nodes()) check(std::isfinite(point.x)&&std::isfinite(point.y),"finite physical bar positions");
+    for(auto velocity:rope.velocities()) check(std::isfinite(velocity.x)&&std::isfinite(velocity.y),"finite physical bar velocities");
+    check(rope.stretchError()<1e-5,"all physical bars retain their rest lengths");
+    check(rope.constraintVelocityError()<1e-5,"settled velocities are tangent to the bar constraints");
     const auto first=rope.points()[5]-rope.points()[0];
     for(std::size_t i=1;i<5;++i) {const auto delta=rope.points()[i]-rope.points()[0];check(std::abs(first.x*delta.y-first.y*delta.x)<1e-5,"short handle remains straight and rigid");}
     check(Whip::totalLength==768 && std::abs(Whip::handleLength-67.584)<1e-6,"fixed lash length with an additional 12 percent shorter handle");
     check(rope.tip().y>rope.points()[0].y+560,"gravity pulls the settled lash downward");
-    for(int i=0;i<700;++i) rope.advance(Whip::step,{100,100},std::min(1.0,i/400.0));
+    for(double t=0;t<1;t+=Whip::step) rope.advance(Whip::step,{100,100},std::min(1.0,t/0.5));
     check(length(rope.tip()-Vec2{100,100})<0.001,"Exact fixes the tip");
     CoilAnimation coil;const auto live=rope.points();coil.begin(live,{100,100},true,10);
     const auto start=coil.sample(live,10),middle=coil.sample(live,10.32),end=coil.sample(live,11);

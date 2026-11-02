@@ -65,6 +65,8 @@ public:
     void advance(double elapsed, Vec2 cursor, double attachment);
     const std::array<Vec2,segments+1>& points() const { return position_; }
     const std::array<Vec2,solverSegments+1>& nodes() const { return nodes_; }
+    const std::array<Vec2,solverSegments+1>& velocities() const {return velocity_;}
+    static const std::array<double,solverSegments+1>& particleMasses();
     Vec2 tip() const { return position_.back(); }
     double tipSpeed() const { return tipSpeed_; }
     Vec2 tipVelocity() const {return tipVelocity_;}
@@ -72,8 +74,10 @@ public:
     double motion() const;
     // Largest relative deviation of any bar from its rest length (diagnostics).
     double stretchError() const;
+    double constraintVelocityError() const;
     void style(WhipStyle value) {style_=value;}
 private:
+    friend struct PhysicsTestAccess;
     void integrate(Vec2 cursor);
     void updateCurve(Vec2 cursor,double attachment=0);
     void solveVelocities();
@@ -81,11 +85,14 @@ private:
     std::array<Vec2,segments+1> position_{};
     std::array<Vec2,solverSegments+1> nodes_{},velocity_{};
     Vec2 control_{},hand_{},handVelocity_{},tipVelocity_{};
-    double accumulator_{},tipSpeed_{},controlAttachment_{},targetAngle_{1.5707963267948966},quietTime_{};
+    double accumulator_{},tipSpeed_{},controlAttachment_{};
     WhipStyle style_=WhipStyle::Spring;
 };
 class ContactValidator {
 public:
+    // A stop only arms a candidate. Contact must be reached by the simulated tip.
+    static constexpr double contactWindow=0.18;
+    static constexpr double minReachRatio=0.80,maxReachRatio=1.06,minProjectionRatio=0.30,minForwardSpeed=2200;
     void arm(const GestureEvent& stop,Mode mode);
     void cancel() {if(stop_ && stop_->id>consumed_) consumed_=stop_->id;stop_.reset();}
     bool pending() const {return stop_.has_value();}
