@@ -1,4 +1,4 @@
-param([ValidateSet('release','debug','ci')][string]$Preset='release',[switch]$SkipAudio,[switch]$NoTest)
+param([ValidateSet('release','debug','ci')][string]$Preset='release',[switch]$SkipAudio,[switch]$NoTest,[switch]$Headless)
 $ErrorActionPreference='Stop'
 $taskRoot=Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $taskRoot
@@ -20,7 +20,9 @@ if($LASTEXITCODE -ne 0){throw 'Configure failed.'}
 if($LASTEXITCODE -ne 0){throw 'Build failed.'}
 if(-not $NoTest){
   $taskCtest=Join-Path (Split-Path $taskCmake) 'ctest.exe'
-  & $taskCtest --preset $Preset
+  $taskTestArguments=@('--preset',$Preset)
+  if($Headless){$taskTestArguments+=@('-E','application_smoke|pause_animation|tray_lifecycle')}
+  & $taskCtest @taskTestArguments
   if($LASTEXITCODE -ne 0){throw 'Tests failed.'}
 }
 if($Preset -eq 'release'){

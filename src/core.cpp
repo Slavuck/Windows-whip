@@ -30,7 +30,7 @@ std::optional<GestureEvent> GestureDetector::sample(double t,Vec2 p,bool held) {
     const double sustained=length(p-old)/0.100;
     if(held) {reset(t,p);cooldownUntil_=t+0.20;return {};}
     if(t<cooldownUntil_) {previousSpeed_=raw;return {};}
-    if(raw>1600) {
+    if(raw>fastSpeed) {
         if(travel_==0) {strokeStart_=p-delta;strokeStarted_=t-dt;strokeDelta_={};}
         if(length(strokeDelta_)>1 && dot(delta,strokeDelta_)<0) {armed_=false;travel_=fastDuration_=peak_=acceleration_=0;strokeDelta_={};strokeStart_=p-delta;strokeStarted_=t-dt;}
         travel_+=distance;strokeDelta_+=delta;fastDuration_+=dt;peak_=std::max(peak_,raw);lastFast_=t;quietSince_=-1;
@@ -41,7 +41,7 @@ std::optional<GestureEvent> GestureDetector::sample(double t,Vec2 p,bool held) {
     previousSpeed_=raw;
     const double average=length(p-strokeStart_)/std::max(t-strokeStarted_,0.001);
     if(!armed_ && t-strokeStarted_>0.18) {travel_=fastDuration_=peak_=acceleration_=0;strokeDelta_={};}
-    if(!armed_ && fastDuration_>=0.028 && travel_>=100 && peak_>=2400 && acceleration_>=16000 && coherence>=0.90 && average>=1800 && sustained>=2000 && t-lastFast_<0.012) {
+    if(!armed_ && fastDuration_>=0.028 && travel_>=100 && peak_>=peakSpeed && acceleration_>=20000 && coherence>=0.90 && average>=2250 && sustained>=sustainedSpeed && t-lastFast_<0.012) {
         armed_=true;return GestureEvent{GestureEvent::Kind::Swing,p,t,peak_,++serial_,strokeDelta_/length(strokeDelta_)};
     }
     if(armed_ && raw<100 && quietSince_>=0 && t-quietSince_>=0.018 && t-lastFast_<=0.090 && quietSince_-lastFast_<=0.045) {
@@ -54,7 +54,7 @@ std::optional<GestureEvent> GestureDetector::sample(double t,Vec2 p,bool held) {
 }
 WhipTuning tuning(WhipStyle style) {
     if(style==WhipStyle::Heavy) return {3200,2.3,0.0010,8.0,2.08};
-    if(style==WhipStyle::Spring) return {2200,1.5,0.000025,5.6,2.72};
+    if(style==WhipStyle::Spring) return {2200,3.8,0.000030,5.6,2.72};
     return {2600,1.9,0.0014,4.4,1.76};
 }
 void Whip::reset(Vec2 cursor) {
@@ -106,24 +106,19 @@ void Whip::integrate(Vec2 cursor,double attachment) {
         const double dl=(-(distance-rest)-alpha*lambda)/(inv[a]+inv[b]+alpha);lambda+=dl;
         nodes_[a]-=delta*(inv[a]*dl/distance);nodes_[b]+=delta*(inv[b]*dl/distance);
     };
-    const auto separate=[&](std::size_t i,std::size_t j) {
-        const Vec2 u=nodes_[i+1]-nodes_[i],v=nodes_[j+1]-nodes_[j],w=nodes_[i]-nodes_[j];
-        const double a=dot(u,u),b=dot(u,v),c=dot(v,v),d=dot(u,w),e=dot(v,w),denom=a*c-b*b;
-        double s=denom>1e-6?std::clamp((b*e-c*d)/denom,0.0,1.0):0;
-        const double t=std::clamp((b*s+e)/std::max(c,1e-6),0.0,1.0);s=std::clamp((b*t-d)/std::max(a,1e-6),0.0,1.0);
-        Vec2 delta=mix(nodes_[i],nodes_[i+1],s)-mix(nodes_[j],nodes_[j+1],t);const double distance=length(delta);
-        if(distance>=16) return;
-        if(distance<1e-5) {delta={-u.y,u.x};const auto before=mix(oldNodes_[i],oldNodes_[i+1],s)-mix(oldNodes_[j],oldNodes_[j+1],t);if(dot(delta,before)<0) delta=delta*-1;delta=delta/std::max(length(delta),1e-6);}else delta=delta/distance;
-        const double wa=1-s,wb=s,wc=1-t,wd=t,weight=inv[i]*wa*wa+inv[i+1]*wb*wb+inv[j]*wc*wc+inv[j+1]*wd*wd;
-        const Vec2 correction=delta*((16-distance)/std::max(weight,1e-6));
-        nodes_[i]+=correction*(inv[i]*wa);nodes_[i+1]+=correction*(inv[i+1]*wb);nodes_[j]-=correction*(inv[j]*wc);nodes_[j+1]-=correction*(inv[j+1]*wd);
-    };
     for(int iteration=0;iteration<20;++iteration) {
         pin();
         for(std::size_t i=0;i<solverSegments;++i) constrain(i,i+1,restLength(i),0,stretch[i]);
-        for(std::size_t i=0;i+2<=solverSegments;++i) constrain(i,i+2,(restLength(i)+restLength(i+1))*0.985,settings.bendCompliance*std::pow(3.0,static_cast<double>(i)),bend[i]);
-        for(std::size_t i=0;i<solverSegments;++i) for(std::size_t j=i+2;j<solverSegments;++j) separate(i,j);
+        for(std::size_t i=0;i+2<=solverSegments;++i) constrain(i,i+2,restLength(i)+restLength(i+1),settings.bendCompliance*std::pow(2.0,static_cast<double>(i)),bend[i]);
         pin();
+    }
+    // Crossings are allowed, just as in the paused roll. Only a weak
+    // particle-clustering pressure remains; segment interiors never collide.
+    for(std::size_t i=2;i<nodes_.size();++i) for(std::size_t j=i+2;j<nodes_.size();++j) {
+        auto delta=nodes_[j]-nodes_[i];const double distance=length(delta);if(distance>=8) continue;
+        if(distance<1e-6) delta={1,0};else delta=delta/distance;
+        const auto correction=delta*((8-distance)*0.04/(inv[i]+inv[j]));
+        nodes_[i]-=correction*inv[i];nodes_[j]+=correction*inv[j];
     }
     // Finish with inextensible links. The first full link is a rigid handle.
     for(int pass=0;pass<5;++pass) {for(std::size_t i=0;i<solverSegments;++i) constrain(i,i+1,restLength(i),0,stretch[i]);pin();}
@@ -155,7 +150,7 @@ double Whip::motion() const {
 }
 void ContactValidator::arm(const GestureEvent& stop,Mode mode) {
     cancel();
-    if(stop.kind!=GestureEvent::Kind::Stop || stop.id<=consumed_ || stop.speed<2400 || !std::isfinite(stop.speed) || std::abs(length(stop.direction)-1)>0.01 || !std::isfinite(stop.time) || !std::isfinite(stop.point.x) || !std::isfinite(stop.point.y)) return;
+    if(stop.kind!=GestureEvent::Kind::Stop || stop.id<=consumed_ || stop.speed<GestureDetector::peakSpeed || !std::isfinite(stop.speed) || std::abs(length(stop.direction)-1)>0.01 || !std::isfinite(stop.time) || !std::isfinite(stop.point.x) || !std::isfinite(stop.point.y)) return;
     stop_=stop;mode_=mode;
 }
 std::optional<ImpactEvent> ContactValidator::update(double time,const Whip& whip,Vec2 cursor,bool held) {
@@ -165,7 +160,7 @@ std::optional<ImpactEvent> ContactValidator::update(double time,const Whip& whip
     const double reach=length(offset),forward=dot(velocity,stop_->direction);
     // This is a physical contact gate, not a target radius or a tip-position
     // correction. A folded, trailing, stationary or inward-moving tip cannot click.
-    if(reach<Whip::totalLength*0.84 || reach>Whip::totalLength*1.06 || dot(offset,stop_->direction)<Whip::totalLength*0.35 || forward<1800 || dot(velocity,offset)<=0) return {};
+    if(reach<Whip::totalLength*0.84 || reach>Whip::totalLength*1.06 || dot(offset,stop_->direction)<Whip::totalLength*0.35 || forward<2200 || dot(velocity,offset)<=0) return {};
     const auto stop=*stop_;cancel();
     return ImpactEvent{stop.id,time,stop.time,length(velocity),mode_==Mode::Exact?stop.point:whip.tip()};
 }

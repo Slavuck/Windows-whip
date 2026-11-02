@@ -13,10 +13,11 @@ inline void paintLashVector(ID2D1RenderTarget* target,ID2D1Factory* factory,cons
     for(std::size_t i=0;i<points.size();++i) {
         const auto direction=points[std::min(i+1,Whip::segments)]-points[i?i-1:0];const double distance=std::max(length(direction),1e-6);
         const double q=static_cast<double>(i)/Whip::segments;
-        const double transition=std::clamp((q-0.078)/0.033,0.0,1.0),smooth=transition*transition*(3-2*transition);
-        // The whole outer handle silhouette is 35% wider; the collar-free
+        const double gripFraction=Whip::handleLength/Whip::totalLength;
+        const double transition=std::clamp((q-0.78*gripFraction)/(0.33*gripFraction),0.0,1.0),smooth=transition*transition*(3-2*transition);
+        // The outer handle width is scaled from the selected cable silhouette; the collar-free
         // width transition is part of the same closed Bezier contour.
-        const double gripExtra=(look.bodyWidth+2*look.outline)*0.35*(1-smooth);
+        const double gripExtra=(look.bodyWidth+2*look.outline)*(Whip::handleWidthRatio-1)*(1-smooth);
         const double half=(look.bodyWidth+gripExtra)*widthScale*0.5;
         const Vec2 center=(points[i]-origin)*scale,normal=Vec2{-direction.y/distance,direction.x/distance}*half;
         left[i]=center+normal;right[i]=center-normal;

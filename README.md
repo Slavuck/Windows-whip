@@ -17,9 +17,11 @@ Run `Whip.exe`. No installer, downloads, or administrator access are needed.
 - **F8** rolls the whip and pauses strikes. The roll follows the mouse on two pinned points while the free part swings with inertia. Press F8 again to unfold and resume. **Escape** exits and is still passed to the active app.
 - Mouse buttons, scrolling, and dragging keep working. Holding a mouse button prevents automatic strikes.
 
-The app pauses while its dark Fluent-style panel or Manual is open, while Windows is locked, and while the active window is full-screen. A normal maximized window does not count as full-screen. A manual pause remains in effect after leaving full-screen. The lash is 768 physical pixels long, with a nearly uniform cable, a shorter rigid handle 35% wider than the cable, and a clean white outline. The selected C design uses a three-pixel grid with no grip rings, seams, or wraps.
+The app pauses while its dark Fluent-style panel or Manual is open, while Windows is locked, and while the active window is full-screen. A normal maximized window does not count as full-screen. A manual pause remains in effect after leaving full-screen. The lash is 768 physical pixels long, with a nearly uniform cable, a 67.6-pixel rigid handle widened a further 15% (55.25% wider than the cable), and a clean white outline. The selected C design uses a three-pixel grid with no grip rings, seams, or wraps.
 
-The mode names sit inside one green segmented capsule. The enlarged Training target occupies the right side of the header. Both flyouts use a minimal portrait layout and Segoe UI Variable typography. Manual uses one larger body style; the final two notes are bold. Manual shows the complete text at once, without scrolling. Its measured layout adapts to the monitor's work area. See [UI design](docs/UI_DESIGN.md).
+The mode names sit inside one green segmented capsule. The enlarged Training target occupies the right side of the header. Both flyouts use a minimal portrait layout and Segoe UI Variable typography. Manual uses one larger body style, with bold mode names and hotkeys; the final two notes are bold. Its Russian title is «Мануал». Manual shows the complete text at once, without scrolling. Its measured layout adapts to the monitor's work area. See [UI design](docs/UI_DESIGN.md).
+
+The free cable can cross itself. Elastic straightening and a weak particle-clustering guard discourage tight knots; the F8 roll simulation is preserved. Strikes require a faster mouse stroke.
 
 ## Settings
 
@@ -38,7 +40,7 @@ Install Visual Studio's **Desktop development with C++** workload, including MSV
 Place one impact MP3 with `удар` in its name and two swing MP3s with `взмах` in their names in `Audio/`. The originals are preserved. Then run from PowerShell:
 
 ```powershell
-./tools/build.ps1
+./tools/build.ps1 -Headless
 ```
 
 The result is `dist/Whip.exe` with all three edited sounds embedded. `dist/SHA256SUMS` contains its SHA-256. No FFmpeg, Python, external WAV, or extra DLL is shipped.
@@ -46,8 +48,10 @@ The result is `dist/Whip.exe` with all three edited sounds embedded. `dist/SHA25
 For a code-only CI build:
 
 ```powershell
-./tools/build.ps1 -Preset ci
+./tools/build.ps1 -Preset ci -Headless
 ```
+
+`-Headless` runs only core, gesture/contact, settings, and DirectWrite layout checks. It opens no windows and does not play sounds or install input hooks. Graphical diagnostics remain available separately.
 
 The CI executable has no sound pack and is not a release build. Original audio files and separate prepared WAVs are local build inputs and are not committed. See [audio credits](AUDIO_CREDITS.md).
 

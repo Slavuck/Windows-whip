@@ -267,7 +267,7 @@ void Application::tick() {
         if(stale) {input_->clear();gesture_.reset(recognitionTime_=now,cursor);contact_.cancel();}
         else if(now-recognitionTime_>=0.018) consume(now,input_->position(),input_->buttons());
     } else consume(begin,cursor,held);
-    const double target=settings_.mode==Mode::Exact?(contact_.pending()?1.0:std::clamp(gesture_.speed()/2400.0,0.0,1.0)):0.0;
+    const double target=settings_.mode==Mode::Exact?(contact_.pending()?1.0:std::clamp(gesture_.speed()/GestureDetector::peakSpeed,0.0,1.0)):0.0;
     attachment_+=(target-attachment_)*(1-std::exp(-dt*(contact_.pending()?90:14)));
     if(settings_.mode==Mode::Exact && contact_.pending()) attachment_=1;
     const Vec2 control=settings_.mode==Mode::Exact && contact_.pending()?contact_.target():cursor;
@@ -345,13 +345,13 @@ void Application::fitManualWindow() {
 }
 void Application::updateLanguage() {
     settings_.save();updateIcon();updateTooltip();
-    if(manual_) {SetWindowTextW(manual_,tr(L"Windows Whip — Manual",L"Windows Whip — Руководство"));fitManualWindow();InvalidateRect(manual_,nullptr,FALSE);}
+    if(manual_) {SetWindowTextW(manual_,tr(L"Windows Whip — Manual",L"Windows Whip — Мануал"));fitManualWindow();InvalidateRect(manual_,nullptr,FALSE);}
     InvalidateRect(panel_,nullptr,FALSE);
 }
 void Application::showManual() {
     uiPause_=true;reconcile();
     if(!manual_) {
-        manual_=CreateWindowExW((preview_?WS_EX_APPWINDOW:WS_EX_TOOLWINDOW)|WS_EX_TOPMOST,manualClass,tr(L"Windows Whip — Manual",L"Windows Whip — Руководство"),WS_POPUP|WS_CAPTION|WS_THICKFRAME|WS_SYSMENU,0,0,460,800,preview_?nullptr:main_,nullptr,instance_,this);
+        manual_=CreateWindowExW((preview_?WS_EX_APPWINDOW:WS_EX_TOOLWINDOW)|WS_EX_TOPMOST,manualClass,tr(L"Windows Whip — Manual",L"Windows Whip — Мануал"),WS_POPUP|WS_CAPTION|WS_THICKFRAME|WS_SYSMENU,0,0,460,800,preview_?nullptr:main_,nullptr,instance_,this);
         styleFlyout(manual_);
     }
     fitManualWindow();ShowWindow(manual_,SW_SHOWNORMAL);ShowWindow(panel_,SW_HIDE);uiPause_=true;reconcile();SetForegroundWindow(manual_);InvalidateRect(manual_,nullptr,FALSE);

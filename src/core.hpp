@@ -27,6 +27,7 @@ NormalizedPoint normalizePoint(Vec2 p, Rect desktop);
 struct GestureEvent { enum class Kind { Swing, Stop }; Kind kind; Vec2 point; double time{},speed{}; std::uint64_t id{}; Vec2 direction{}; };
 class GestureDetector {
 public:
+    static constexpr double fastSpeed=2000,peakSpeed=3000,sustainedSpeed=2500;
     std::optional<GestureEvent> sample(double time, Vec2 point, bool buttonHeld);
     void reset(double time, Vec2 point);
     double speed() const { return speed_; }
@@ -50,7 +51,8 @@ public:
     static constexpr std::size_t segments=64;
     static constexpr double segmentLength=12.0;
     static constexpr double totalLength=segments*segmentLength;
-    static constexpr double handleLength=76.8;
+    static constexpr double handleLength=76.8*0.88;
+    static constexpr double handleWidthRatio=1.35*1.15;
     static constexpr double tailLinkLength=(totalLength-handleLength)/(solverSegments-1);
     static constexpr double step=1.0/480.0;
     void reset(Vec2 cursor);

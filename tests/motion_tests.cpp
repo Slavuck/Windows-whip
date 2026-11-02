@@ -13,7 +13,7 @@ Result stroke(double travel,double duration,double angle,Mode mode,double fps) {
     for(int i=1;i<=static_cast<int>(fps*2);++i) {
         const double dt=1/fps,t=i*dt,u=std::min(t/duration,1.0),s=u*u*(3-2*u);const Vec2 cursor=direction*(travel*s);
         if(auto event=gesture.sample(t,cursor,false)) {if(event->kind==GestureEvent::Kind::Swing) {++result.swings;contact.cancel();}else {++result.stops;contact.arm(*event,mode);}}
-        const double target=mode==Mode::Exact?(contact.pending()?1:std::clamp(gesture.speed()/2400.0,0.0,1.0)):0;
+        const double target=mode==Mode::Exact?(contact.pending()?1:std::clamp(gesture.speed()/GestureDetector::peakSpeed,0.0,1.0)):0;
         attachment+=(target-attachment)*(1-std::exp(-dt*(contact.pending()?90:14)));if(mode==Mode::Exact && contact.pending()) attachment=1;
         whip.advance(dt,mode==Mode::Exact && contact.pending()?contact.target():cursor,attachment);
         if(auto hit=contact.update(t,whip,cursor,false)) {++result.hits;const auto offset=whip.tip()-whip.points().front();result.reach=length(offset);result.delay=(hit->time-hit->stopTime)*1000;result.projection=dot(offset,direction);result.tipSpeed=hit->speed;result.pointError=length(hit->point-whip.tip());}
@@ -42,7 +42,10 @@ int main(int argc,char**) {
         }
         for(auto mode:{Mode::Sadomaso,Mode::Exact}) {
             require(stroke(160,0.2,0,mode,144).hits==0,"weak stroke cannot click");
-            require(stroke(560,0.06,0,mode,144).hits==0,"a powerful but folded/trailing lash cannot click");
+            require(stroke(256,0.12,0,mode,144).swings==0,"medium stroke below the raised sustained-speed threshold cannot arm");
+            const auto fast=stroke(560,0.06,0,mode,144);
+            require(fast.hits<=1,"a fast crossing stroke never repeats");
+            if(fast.hits) require(fast.reach>=Whip::totalLength*0.84 && fast.projection>Whip::totalLength*0.35,"a crossing stroke clicks only after the tip physically unfolds ahead");
         }
         // Delayed/coalesced pointer delivery can create high instantaneous
         // speeds even for slow hands. Require the real stroke average too.
@@ -59,6 +62,11 @@ int main(int argc,char**) {
             require(events==0,"one cursor teleport cannot become a stroke");
         }
         Whip resting;resting.reset({0,0});for(int i=0;i<500;++i) resting.advance(Whip::step,{0,0},0);
+        {
+            Whip trailing=resting;trailing.advance(Whip::step,{160,0},0);
+            ContactValidator gate;gate.arm({GestureEvent::Kind::Stop,{160,0},1,4000,99,{1,0}},Mode::Sadomaso);
+            require(!gate.update(1.001,trailing,{160,0},false),"a fast moving tip behind its handle cannot click");
+        }
         const GestureEvent stop{GestureEvent::Kind::Stop,{0,0},1,3000,100,{1,0}};
         ContactValidator contact;contact.arm(stop,Mode::Sadomaso);
         require(!contact.update(1.01,resting,{0,0},false),"a qualified gesture cannot click a stationary/trailing tip");

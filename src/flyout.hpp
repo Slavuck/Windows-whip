@@ -20,6 +20,7 @@ struct ManualBlock {
     enum class Kind { Body, Note };
     Kind kind{};
     std::wstring title,text;
+    std::vector<DWRITE_TEXT_RANGE> emphasis;
     float y{},height{},textHeight{};
 };
 struct ManualLayout {
@@ -44,8 +45,7 @@ private:
     Microsoft::WRL::ComPtr<IDWriteFactory> write_;
     std::wstring font_=L"Segoe UI";
     Target& target(HWND window,bool manual);
-    Microsoft::WRL::ComPtr<IDWriteTextFormat> format(float size,bool strong=false) const;
-    float textHeight(const std::wstring& text,float width,float size,bool strong=false) const;
+    float textHeight(const ManualBlock& block,float width,float size) const;
     ManualLayout layoutManual(const std::wstring& text,float width,float scale) const;
 };
 }

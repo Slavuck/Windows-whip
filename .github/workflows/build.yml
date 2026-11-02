@@ -9,4 +9,4 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build and test without the local audio pack
         shell: pwsh
-        run: ./tools/build.ps1 -Preset ci
+        run: ./tools/build.ps1 -Preset ci -Headless

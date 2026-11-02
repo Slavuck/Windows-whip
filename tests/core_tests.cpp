@@ -22,7 +22,7 @@ int main() {
     }
     GestureDetector gesture;gesture.reset(0,{0,0});int swings=0,stops=0;
     for(int i=1;i<=100;++i) {
-        const double x=i<=10?i*24.0:240.0;
+        const double x=i<=10?i*32.0:320.0;
         if(auto event=gesture.sample(i*0.008,{x,0},false)) {if(event->kind==GestureEvent::Kind::Swing) ++swings;else ++stops;}
     }
     check(swings==1 && stops==1,"one fast stroke produces one swing and stop");
@@ -40,9 +40,9 @@ int main() {
     for(auto point:rope.points()) check(std::isfinite(point.x)&&std::isfinite(point.y),"finite XPBD state");
     double maximum=0;for(std::size_t i=0;i<Whip::segments;++i) maximum=std::max(maximum,length(rope.points()[i+1]-rope.points()[i]));
     check(maximum<Whip::segmentLength*1.2,"rope returns to its rest lengths");
-    const auto first=rope.points()[6]-rope.points()[0];
-    for(std::size_t i=1;i<6;++i) {const auto delta=rope.points()[i]-rope.points()[0];check(std::abs(first.x*delta.y-first.y*delta.x)<1e-5,"short handle remains straight and rigid");}
-    check(Whip::totalLength==768 && std::abs(Whip::handleLength-76.8)<1e-6,"20 percent shorter lash and 40 percent shorter handle");
+    const auto first=rope.points()[5]-rope.points()[0];
+    for(std::size_t i=1;i<5;++i) {const auto delta=rope.points()[i]-rope.points()[0];check(std::abs(first.x*delta.y-first.y*delta.x)<1e-5,"short handle remains straight and rigid");}
+    check(Whip::totalLength==768 && std::abs(Whip::handleLength-67.584)<1e-6,"fixed lash length with an additional 12 percent shorter handle");
     check(rope.tip().y>rope.points()[0].y+560,"gravity pulls the settled lash downward");
     for(int i=0;i<700;++i) rope.advance(Whip::step,{100,100},std::min(1.0,i/400.0));
     check(length(rope.tip()-Vec2{100,100})<0.001,"Exact fixes the tip");

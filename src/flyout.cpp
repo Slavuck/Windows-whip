@@ -8,6 +8,26 @@ namespace {
 constexpr UINT32 foreground=0xf3f6fa,secondary=0xb4c3cf;
 const wchar_t* local(Language lang,const wchar_t* en,const wchar_t* ru) {return lang==Language::Russian?ru:en;}
 bool inside(float x,float y,D2D1_RECT_F r) {return x>=r.left && x<=r.right && y>=r.top && y<=r.bottom;}
+Microsoft::WRL::ComPtr<IDWriteTextLayout> manualText(IDWriteFactory* write,const std::wstring& font,const ManualBlock& block,float width,float size) {
+    Microsoft::WRL::ComPtr<IDWriteTextFormat> format;Microsoft::WRL::ComPtr<IDWriteTextLayout> layout;
+    write->CreateTextFormat(font.c_str(),nullptr,block.kind==ManualBlock::Kind::Note?DWRITE_FONT_WEIGHT_SEMI_BOLD:DWRITE_FONT_WEIGHT_NORMAL,DWRITE_FONT_STYLE_NORMAL,DWRITE_FONT_STRETCH_NORMAL,size,L"en-us",&format);
+    if(!format) return layout;
+    format->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);format->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM,size*1.48f,size*1.12f);
+    write->CreateTextLayout(block.text.c_str(),static_cast<UINT32>(block.text.size()),format.Get(),width,10000,&layout);
+    if(layout) for(const auto& span:block.emphasis) layout->SetFontWeight(DWRITE_FONT_WEIGHT_SEMI_BOLD,span);
+    return layout;
+}
+ManualBlock manualBlock(const std::wstring& source) {
+    ManualBlock block;block.kind=source.starts_with(L"Примечание") || source.starts_with(L"Note")?ManualBlock::Kind::Note:ManualBlock::Kind::Body;
+    for(std::size_t i=0;i<source.size();) {
+        if(source.compare(i,2,L"**")==0) {
+            const auto end=source.find(L"**",i+2);
+            if(end!=std::wstring::npos) {const auto start=block.text.size();block.text+=source.substr(i+2,end-i-2);block.emphasis.push_back({static_cast<UINT32>(start),static_cast<UINT32>(end-i-2)});i=end+2;continue;}
+        }
+        block.text+=source[i++];
+    }
+    return block;
+}
 struct Painter {
     ID2D1RenderTarget* target;IDWriteFactory* write;std::wstring font;
     ComPtr<ID2D1SolidColorBrush> brush;
@@ -47,21 +67,16 @@ bool FlyoutView::initialize(ID2D1Factory* factory,IDWriteFactory* write) {
     ComPtr<IDWriteFontCollection> fonts;if(SUCCEEDED(write_->GetSystemFontCollection(&fonts))) {UINT32 index{};BOOL exists{};fonts->FindFamilyName(L"Segoe UI Variable Text",&index,&exists);if(exists) font_=L"Segoe UI Variable Text";}
     return true;
 }
-ComPtr<IDWriteTextFormat> FlyoutView::format(float size,bool strong) const {
-    ComPtr<IDWriteTextFormat> result;write_->CreateTextFormat(font_.c_str(),nullptr,strong?DWRITE_FONT_WEIGHT_SEMI_BOLD:DWRITE_FONT_WEIGHT_NORMAL,DWRITE_FONT_STYLE_NORMAL,DWRITE_FONT_STRETCH_NORMAL,size,L"en-us",&result);
-    result->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);result->SetLineSpacing(DWRITE_LINE_SPACING_METHOD_UNIFORM,size*1.48f,size*1.12f);return result;
-}
-float FlyoutView::textHeight(const std::wstring& text,float width,float size,bool strong) const {
-    auto f=format(size,strong);ComPtr<IDWriteTextLayout> layout;
-    if(FAILED(write_->CreateTextLayout(text.c_str(),static_cast<UINT32>(text.size()),f.Get(),width,10000,&layout))) return 0;
+float FlyoutView::textHeight(const ManualBlock& block,float width,float size) const {
+    auto layout=manualText(write_.Get(),font_,block,width,size);if(!layout) return 0;
     DWRITE_TEXT_METRICS metrics{};layout->GetMetrics(&metrics);return std::ceil(metrics.height);
 }
 ManualLayout FlyoutView::layoutManual(const std::wstring& text,float width,float scale) const {
     ManualLayout result;result.width=width;result.scale=scale;float y=80;
     const auto content=paragraphs(text);
     for(std::size_t i=0;i<content.size();++i) {
-        ManualBlock b;b.text=content[i];b.y=y;b.kind=i>=6?ManualBlock::Kind::Note:ManualBlock::Kind::Body;
-        b.textHeight=textHeight(b.text,width-56,19.5f*scale,b.kind==ManualBlock::Kind::Note);
+        ManualBlock b=manualBlock(content[i]);b.y=y;
+        b.textHeight=textHeight(b,width-56,19.5f*scale);
         b.height=b.textHeight+16*scale;result.blocks.push_back(b);y+=b.height;
     }
     result.height=std::ceil(y+12);return result;
@@ -100,7 +115,7 @@ void FlyoutView::paintPanel(HWND window,const UiState& state) {
     PAINTSTRUCT ps{};BeginPaint(window,&ps);auto& render=target(window,false);
     if(render) {
         render->BeginDraw();Painter p(render.Get(),write_.Get(),font_);const auto size=render->GetSize();p.surface(size.width,size.height);
-        p.text(L"Windows Whip",{24,22,238,57},20,foreground,true);
+        p.text(L"Windows Whip",{24,32,238,68},20,foreground,true);
         const bool training=state.hover==UiAction::Training || state.focus==UiAction::Training;
         p.rounded({244,12,308,76},8,0xffffff,training?0.085f:0.045f);p.targetIcon(276,44,secondary,1.75f);
         p.rounded({24,94,296,138},22,0x1b1d21);p.color(0x575b65);render->DrawRoundedRectangle(D2D1::RoundedRect({24,94,296,138},22,22),p.brush.Get(),1);
@@ -112,7 +127,7 @@ void FlyoutView::paintPanel(HWND window,const UiState& state) {
         const float selected=state.language==Language::English?168.0f:232.0f;p.rounded({selected,160,selected+64,196},18,0x394c6b);
         p.text(L"EN",{168,160,232,196},14,foreground,true,true);p.text(L"RU",{232,160,296,196},14,foreground,true,true);
         if(state.hover==UiAction::Manual || state.focus==UiAction::Manual) p.rounded({16,216,304,260},8,0xffffff,0.04f);
-        p.text(local(state.language,L"Manual",L"Руководство"),{24,224,296,258},17,foreground);
+        p.text(local(state.language,L"Manual",L"Мануал"),{24,224,296,258},17,foreground);
         p.line(24,276,296,276,0x3a3d44);
         if(state.hover==UiAction::Pause || state.focus==UiAction::Pause) p.rounded({16,280,304,328},8,0xffffff,0.04f);
         p.text(local(state.language,state.paused?L"Resume":L"Pause",state.paused?L"Продолжить":L"Пауза"),{24,293,260,327},16,foreground);
@@ -125,10 +140,13 @@ void FlyoutView::paintManual(HWND window,const UiState& state,const ManualLayout
     PAINTSTRUCT ps{};BeginPaint(window,&ps);auto& render=target(window,true);
     if(render) {
         render->BeginDraw();Painter p(render.Get(),write_.Get(),font_);const auto size=render->GetSize();p.surface(size.width,size.height);
-        p.text(local(state.language,L"Manual",L"Руководство"),{28,24,size.width-70,62},24,foreground,true);
+        p.text(local(state.language,L"Manual",L"Мануал"),{28,24,size.width-70,62},24,foreground,true);
         if(state.hover==UiAction::Close) p.rounded({size.width-60,16,size.width-16,60},8,0xffffff,0.05f);
         p.line(size.width-44,33,size.width-34,43,secondary,1.4f);p.line(size.width-34,33,size.width-44,43,secondary,1.4f);
-        for(const auto& b:layout.blocks) p.text(b.text,{28,b.y,layout.width-28,b.y+b.textHeight+5},19.5f*layout.scale,foreground,b.kind==ManualBlock::Kind::Note);
+        for(const auto& b:layout.blocks) {
+            auto text=manualText(write_.Get(),font_,b,layout.width-56,19.5f*layout.scale);p.color(foreground);
+            if(text) render->DrawTextLayout({28,b.y},text.Get(),p.brush.Get());
+        }
         if(FAILED(render->EndDraw())) render.Reset();
     }
     EndPaint(window,&ps);

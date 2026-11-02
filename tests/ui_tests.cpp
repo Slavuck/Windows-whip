@@ -27,9 +27,13 @@ int main() {
                 const auto layout=view.fitManual(text,1000,height);
                 require(layout.height<=height-32,"all Manual content fits without scrolling");
                 require(layout.height>layout.width,"Manual remains portrait");
-                require(layout.blocks.size()==8,"all eight author paragraphs are visible");
-                for(std::size_t i=0;i<layout.blocks.size();++i) require(layout.blocks[i].kind==(i>=6?ManualBlock::Kind::Note:ManualBlock::Kind::Body),"uniform body with bold notes only");
-                for(const auto& block:layout.blocks) require(block.y+block.height<=layout.height,"no Manual block is clipped");
+                require(layout.blocks.size()==7,"all seven author paragraphs are visible");
+                for(std::size_t i=0;i<layout.blocks.size();++i) require(layout.blocks[i].kind==(i>=5?ManualBlock::Kind::Note:ManualBlock::Kind::Body),"uniform body with bold notes only");
+                for(const auto& block:layout.blocks) {
+                    require(block.y+block.height<=layout.height,"no Manual block is clipped");
+                    require(block.text.find(L"**")==std::wstring::npos,"bold markup is not displayed literally");
+                }
+                for(std::size_t i=1;i<=4;++i) require(layout.blocks[i].emphasis.size()==1,"mode names and hotkeys retain inline emphasis");
             }
         }
         std::cout<<"Portrait EN/RU layouts fit at 600, 720, 900 and 1080 DIP; hit targets passed.\n";
