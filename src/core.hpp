@@ -42,35 +42,46 @@ private:
 };
 struct ImpactEvent { std::uint64_t gestureId{}; double time{},stopTime{},speed{}; Vec2 point{}; };
 enum class WhipStyle { Contour, Heavy, Spring };
-struct WhipTuning { double gravity,damping,bendCompliance,bodyWidth,outline; };
+// gravity        px/s^2
+// damping        linear air damping, 1/s
+// bendCompliance 1 / (bending stiffness of the belly), i.e. EI_belly = 1/bendCompliance [mass*px^3/s^2]
+// bodyWidth,outline  drawing only (used by lash_visual.hpp)
+// drag           quadratic drag coefficient across the belly, 1/px (thinner parts get proportionally more)
+struct WhipTuning { double gravity,damping,bendCompliance,bodyWidth,outline,drag; };
 WhipTuning tuning(WhipStyle style);
 class Whip {
 public:
-    // Six physical links drive a smooth vector curve. Render samples are not joints.
-    static constexpr std::size_t solverSegments=6;
+    // A real chain of rigid bars (one handle bar + 48 thong bars) is integrated with
+    // exact inextensibility. The render curve is a smooth Hermite spline through the nodes.
+    static constexpr std::size_t solverSegments=49;
     static constexpr std::size_t segments=64;
     static constexpr double segmentLength=12.0;
     static constexpr double totalLength=segments*segmentLength;
     static constexpr double handleLength=76.8*0.88;
     static constexpr double handleWidthRatio=1.35*1.15;
     static constexpr double tailLinkLength=(totalLength-handleLength)/(solverSegments-1);
-    static constexpr double step=1.0/480.0;
+    static constexpr double step=1.0/960.0;
     void reset(Vec2 cursor);
     void advance(double elapsed, Vec2 cursor, double attachment);
     const std::array<Vec2,segments+1>& points() const { return position_; }
+    const std::array<Vec2,solverSegments+1>& nodes() const { return nodes_; }
     Vec2 tip() const { return position_.back(); }
     double tipSpeed() const { return tipSpeed_; }
     Vec2 tipVelocity() const {return tipVelocity_;}
-    Vec2 handleVelocity() const {return handleVelocity_;}
+    Vec2 handleVelocity() const {return handVelocity_;}
     double motion() const;
+    // Largest relative deviation of any bar from its rest length (diagnostics).
+    double stretchError() const;
     void style(WhipStyle value) {style_=value;}
 private:
-    void integrate(Vec2 cursor, double attachment);
+    void integrate(Vec2 cursor);
     void updateCurve(Vec2 cursor,double attachment=0);
-    std::array<Vec2,segments+1> position_{},previous_{};
-    std::array<Vec2,solverSegments+1> nodes_{},oldNodes_{};
-    Vec2 control_{},stepControl_{},tipVelocity_{},handleVelocity_{};
-    double accumulator_{},tipSpeed_{},controlAttachment_{},handleAngle_{1.5707963267948966},handleSpin_{},targetAngle_{1.5707963267948966},quietTime_{};
+    void solveVelocities();
+    void solvePositions(int iterations);
+    std::array<Vec2,segments+1> position_{};
+    std::array<Vec2,solverSegments+1> nodes_{},velocity_{};
+    Vec2 control_{},hand_{},handVelocity_{},tipVelocity_{};
+    double accumulator_{},tipSpeed_{},controlAttachment_{},targetAngle_{1.5707963267948966},quietTime_{};
     WhipStyle style_=WhipStyle::Spring;
 };
 class ContactValidator {
@@ -97,11 +108,12 @@ public:
     bool coiled() const {return initialized_ && coiling_;}
     double motion() const {return motion_;}
 private:
+    // The rolled whip is a rigid ring hanging from the end of the handle like a pendulum.
     Points source_{},coil_{};
-    std::array<Vec2,8> bodies_{},previousBodies_{},rest_{};
-    Vec2 origin_{},cursor_{};
+    Vec2 origin_{},cursor_{},anchor_{},anchorVelocity_{};
     double motion_{},accumulator_{};
     double start_{},duration_{};
+    double angle_{},spin_{};
     bool initialized_{},coiling_{};
 };
 }

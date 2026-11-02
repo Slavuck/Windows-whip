@@ -5,6 +5,7 @@
 #include <limits>
 
 namespace whip {
+namespace { constexpr double contactWindow=0.18; } // a real lash needs ~100-150 ms after the hand stops to roll out and crack
 double length(Vec2 v) { return std::hypot(v.x,v.y); }
 double dot(Vec2 a,Vec2 b) { return a.x*b.x+a.y*b.y; }
 Vec2 mix(Vec2 a,Vec2 b,double t) { return a*(1-t)+b*t; }
@@ -52,101 +53,205 @@ std::optional<GestureEvent> GestureDetector::sample(double t,Vec2 p,bool held) {
     if(armed_ && t-lastFast_>0.090) {armed_=false;travel_=fastDuration_=peak_=acceleration_=0;strokeDelta_={};}
     return {};
 }
+namespace {
+constexpr double pi=3.14159265358979323846;
+constexpr std::size_t N=Whip::solverSegments;   // bars; nodes are 0..N
+constexpr std::size_t M=N-1;                    // thong bars (bar 0 is the rigid handle)
+
+// --- Hand and wrist ---------------------------------------------------------------------
+// The hand is a critically damped follower of the mouse. It removes pixel quantisation and gives
+// the hand a finite acceleration; the drawn handle is still translated to sit on the cursor.
+constexpr double handFrequency=220.0;           // rad/s
+// The wrist is a rotational spring/damper that aims the handle along the stroke. The lash can pull on it.
+constexpr double wristFrequency=70.0,wristDamping=0.9;
+constexpr double handleMass=260.0;              // equivalent point mass of the handle at its tip
+
+// --- Whip body ---------------------------------------------------------------------------
+// Linear density relative to the belly: a thick plaited belly tapering to a thin fall and cracker.
+constexpr double tipDensity=0.04,taperPower=2.4;
+constexpr double tangentialDrag=0.06;           // along-the-rope drag relative to across-the-rope drag
+constexpr double bendDamping=0.006;             // s, internal friction of the braid
+constexpr double crackSpeed=9000;               // px/s, drag doubles here: the crack of a real whip radiates a large part of its energy
+constexpr double speedLimit=90000;              // px/s, numerical safety net only
+
+double taper(double s) {return tipDensity+(1-tipDensity)*std::pow(1-s,taperPower);}
+double cross(Vec2 a,Vec2 b) {return a.x*b.y-a.y*b.x;}
+Vec2 perp(Vec2 v) {return {-v.y,v.x};}
+Vec2 unit(Vec2 v) {const double l=length(v);return l>1e-9?v/l:Vec2{0,1};}
+
+struct Layout {
+    std::array<double,N+1> inverse{},drag{},bend{};
+    Layout() {
+        std::array<double,N+1> mass{};
+        for(std::size_t j=1;j<=M;++j) {
+            const double m=taper((static_cast<double>(j)-0.5)/M)*Whip::tailLinkLength;
+            mass[j]+=0.5*m;mass[j+1]+=0.5*m;
+        }
+        mass[1]+=handleMass;
+        for(std::size_t i=1;i<=N;++i) {
+            const double density=taper(static_cast<double>(i-1)/M);
+            inverse[i]=1/mass[i];
+            drag[i]=i==1?0.3:1/std::sqrt(density); // thinner rope: more drag per unit mass
+            bend[i]=density*density;               // EI grows with the fourth power of the radius, mass with the second
+        }
+    }
+};
+const Layout& layout() {static const Layout value;return value;}
+
+// Solves the symmetric tridiagonal system of a bar chain (A P = rhs) with the Thomas algorithm.
+// A(i,i)=w[i]+w[i+1], A(i,i+1)=-(n[i].n[i+1]) w[i+1]. Node 0 is kinematic (w=0).
+void solveChain(const std::array<Vec2,N>& dir,const std::array<double,N>& rhs,const std::array<double,N+1>& w,std::array<double,N>& result) {
+    std::array<double,N> cp{},dp{};
+    double previousOff=0;
+    for(std::size_t i=0;i<N;++i) {
+        const double diag=w[i]+w[i+1]+1e-12;
+        const double m=diag-(i?previousOff*cp[i-1]:0);
+        const double off=i+1<N?-dot(dir[i],dir[i+1])*w[i+1]:0;
+        cp[i]=off/m;dp[i]=(rhs[i]-(i?previousOff*dp[i-1]:0))/m;previousOff=off;
+    }
+    result[N-1]=dp[N-1];
+    for(std::size_t i=N-1;i-->0;) result[i]=dp[i]-cp[i]*result[i+1];
+}
+double restLength(std::size_t bar) {return bar==0?Whip::handleLength:Whip::tailLinkLength;}
+}
 WhipTuning tuning(WhipStyle style) {
-    if(style==WhipStyle::Heavy) return {3200,2.3,0.0010,8.0,2.08};
-    if(style==WhipStyle::Spring) return {2200,3.8,0.000030,5.6,2.72};
-    return {2600,1.9,0.0014,4.4,1.76};
+    //                          gravity damping  1/EI        width outline drag
+    if(style==WhipStyle::Heavy) return {4200,0.9,1/9.0e8,8.0,2.08,1.0e-4};
+    if(style==WhipStyle::Spring) return {3200,1.6,1/6.0e8,5.6,2.72,1.8e-4};
+    return {2800,1.4,1/3.5e8,4.4,1.76,1.5e-4};
 }
 void Whip::reset(Vec2 cursor) {
-    for(std::size_t i=0;i<=solverSegments;++i) nodes_[i]=oldNodes_[i]=cursor+Vec2{0,i?handleLength+(i-1)*tailLinkLength:0};
-    control_=stepControl_=cursor;controlAttachment_=0;tipVelocity_=handleVelocity_={};handleAngle_=targetAngle_=1.5707963267948966;handleSpin_=quietTime_=0;
-    updateCurve(cursor);previous_=position_;accumulator_=tipSpeed_=0;
+    for(std::size_t i=0;i<=solverSegments;++i) {nodes_[i]=cursor+Vec2{0,i?handleLength+(i-1)*tailLinkLength:0};velocity_[i]={};}
+    hand_=control_=cursor;handVelocity_=tipVelocity_={};controlAttachment_=0;targetAngle_=pi/2;quietTime_=0;accumulator_=tipSpeed_=0;
+    updateCurve(cursor,0);
 }
 void Whip::advance(double elapsed,Vec2 cursor,double attachment) {
     elapsed=std::clamp(elapsed,0.0,0.035);if(elapsed<=0) return;
-    const auto from=control_;const double oldAttachment=controlAttachment_,before=accumulator_;accumulator_+=elapsed;
+    const auto from=control_;const double before=accumulator_;accumulator_+=elapsed;
     double time=step-before;
     while(accumulator_>=step) {
-        const double part=std::clamp(time/elapsed,0.0,1.0);
-        integrate(mix(from,cursor,part),oldAttachment+(std::clamp(attachment,0.0,1.0)-oldAttachment)*part);
+        // The mouse moves linearly across the frame; every sub-step sees its own point on that line.
+        integrate(mix(from,cursor,std::clamp(time/elapsed,0.0,1.0)));
         accumulator_-=step;time+=step;
     }
     control_=cursor;controlAttachment_=std::clamp(attachment,0.0,1.0);
     updateCurve(cursor,controlAttachment_);
 }
-void Whip::integrate(Vec2 cursor,double attachment) {
-    const Vec2 oldTip=position_.back(),oldHandle=position_.front(),velocityInput=(cursor-stepControl_)/step;stepControl_=cursor;
-    const double inputSpeed=length(velocityInput);
-    if(inputSpeed>350) {
-        const double desired=std::atan2(velocityInput.y,velocityInput.x);
-        if(inputSpeed>=1400) targetAngle_=desired;
-        else targetAngle_+=std::remainder(desired-targetAngle_,6.283185307179586)*std::pow(inputSpeed/2000,2)*(1-std::exp(-10*step));
-        quietTime_=0;
-    }else quietTime_+=step;
-    if(quietTime_>0.8) targetAngle_=1.5707963267948966;
-    const double error=std::remainder(targetAngle_-handleAngle_,6.283185307179586);
-    handleSpin_+=(error*650-handleSpin_*32)*step;handleAngle_+=handleSpin_*step;
-    const Vec2 gripDirection{std::cos(handleAngle_),std::sin(handleAngle_)};
-    const auto restLength=[](std::size_t i){return i==0?handleLength:tailLinkLength;};
-    const auto settings=tuning(style_);previous_=position_;
-    std::array<double,solverSegments+1> inv{};
-    for(std::size_t i=0;i<=solverSegments;++i) {
-        const double s=static_cast<double>(i)/solverSegments;inv[i]=std::pow(18.0,s);
-        auto velocity=(nodes_[i]-oldNodes_[i])*std::exp(-settings.damping*step);
-        const double v=length(velocity),limit=(7000+25000*s*s)*step;if(v>limit) velocity=velocity*(limit/v);
-        oldNodes_[i]=nodes_[i];nodes_[i]+=velocity+Vec2{0,settings.gravity*step*step};
+void Whip::solveVelocities() {
+    const auto& inverse=layout().inverse;
+    std::array<Vec2,N> dir{};std::array<double,N> rhs{},impulse{};
+    for(std::size_t i=0;i<N;++i) {
+        dir[i]=unit(nodes_[i+1]-nodes_[i]);rhs[i]=-dot(dir[i],velocity_[i+1]-velocity_[i]);
     }
-    std::array<double,solverSegments> stretch{};
-    std::array<double,solverSegments-1> bend{};
-    const auto pin=[&]{nodes_[0]=cursor;nodes_[1]=cursor+gripDirection*handleLength;};
-    const auto constrain=[&](std::size_t a,std::size_t b,double rest,double compliance,double& lambda){
-        const Vec2 delta=nodes_[b]-nodes_[a];const double distance=length(delta);
-        if(distance<1e-7) return;
-        const double alpha=compliance/(step*step);
-        const double dl=(-(distance-rest)-alpha*lambda)/(inv[a]+inv[b]+alpha);lambda+=dl;
-        nodes_[a]-=delta*(inv[a]*dl/distance);nodes_[b]+=delta*(inv[b]*dl/distance);
-    };
-    for(int iteration=0;iteration<20;++iteration) {
-        pin();
-        for(std::size_t i=0;i<solverSegments;++i) constrain(i,i+1,restLength(i),0,stretch[i]);
-        for(std::size_t i=0;i+2<=solverSegments;++i) constrain(i,i+2,restLength(i)+restLength(i+1),settings.bendCompliance*std::pow(2.0,static_cast<double>(i)),bend[i]);
-        pin();
+    solveChain(dir,rhs,inverse,impulse);
+    for(std::size_t i=0;i<N;++i) {
+        velocity_[i+1]+=dir[i]*(impulse[i]*inverse[i+1]);velocity_[i]-=dir[i]*(impulse[i]*inverse[i]);
+        // A rope cannot push. A perfectly straight chain would otherwise act as a rigid rod, so a
+        // compressed bar gets a tiny sideways imperfection and buckles like a real rope does.
+        if(i>0 && impulse[i]>0) velocity_[i+1]+=perp(dir[i])*(((i*2654435761u)>>7&1u?1.0:-1.0)*0.03*impulse[i]*inverse[i+1]);
     }
-    // Crossings are allowed, just as in the paused roll. Only a weak
-    // particle-clustering pressure remains; segment interiors never collide.
-    for(std::size_t i=2;i<nodes_.size();++i) for(std::size_t j=i+2;j<nodes_.size();++j) {
-        auto delta=nodes_[j]-nodes_[i];const double distance=length(delta);if(distance>=8) continue;
-        if(distance<1e-6) delta={1,0};else delta=delta/distance;
-        const auto correction=delta*((8-distance)*0.04/(inv[i]+inv[j]));
-        nodes_[i]-=correction*inv[i];nodes_[j]+=correction*inv[j];
-    }
-    // Finish with inextensible links. The first full link is a rigid handle.
-    for(int pass=0;pass<5;++pass) {for(std::size_t i=0;i<solverSegments;++i) constrain(i,i+1,restLength(i),0,stretch[i]);pin();}
-    updateCurve(cursor,attachment);
-    tipVelocity_=(position_.back()-oldTip)/step;handleVelocity_=(position_.front()-oldHandle)/step;tipSpeed_=length(tipVelocity_);
 }
-void Whip::updateCurve(Vec2 cursor,double attachment) {
-    for(std::size_t i=0;i<=segments;++i) {
-        const double arc=static_cast<double>(i)*totalLength/segments;
-        const double coordinate=arc<=handleLength?arc/handleLength:1+(arc-handleLength)/tailLinkLength;
-        const auto k=std::min(static_cast<std::size_t>(coordinate),solverSegments-1);const double t=coordinate-k;
-        if(k==0) position_[i]=mix(nodes_[0],nodes_[1],t);
-        else {
-            const auto a=nodes_[k-1],b=nodes_[k],c=nodes_[k+1],d=nodes_[std::min(k+2,solverSegments)];
-            // The handle tangent remains collinear through the seamless join.
-            const auto tangent=k==1?b-a:(c-a)*0.5,endTangent=k+1==solverSegments?c-b:(d-b)*0.5;
-            const double t2=t*t,t3=t2*t;position_[i]=b*(2*t3-3*t2+1)+tangent*(t3-2*t2+t)+c*(-2*t3+3*t2)+endTangent*(t3-t2);
+void Whip::solvePositions(int iterations) {
+    // Newton iterations on the bar lengths. A fast tip can travel more than one bar per sub-step, so
+    // after the usual few passes we keep iterating (bounded) until the lengths are accurate.
+    const auto& inverse=layout().inverse;
+    for(int pass=0;pass<iterations+12;++pass) {
+        std::array<Vec2,N> dir{};std::array<double,N> rhs{},lambda{};double worst=0;
+        for(std::size_t i=0;i<N;++i) {
+            const Vec2 d=nodes_[i+1]-nodes_[i];dir[i]=unit(d);rhs[i]=-(length(d)-restLength(i));
+            worst=std::max(worst,std::abs(rhs[i])/restLength(i));
+        }
+        if(pass>=iterations && worst<1e-6) break;
+        solveChain(dir,rhs,inverse,lambda);
+        for(std::size_t i=0;i<N;++i) {
+            const Vec2 up=dir[i]*(lambda[i]*inverse[i+1]),down=dir[i]*(lambda[i]*inverse[i]);
+            nodes_[i+1]+=up;nodes_[i]-=down;velocity_[i+1]+=up/step;velocity_[i]-=down/step;
         }
     }
-    // Exact changes the held point by a rigid translation of the curve.
-    // Rest lengths and relative velocities are identical in both modes.
+}
+void Whip::integrate(Vec2 cursor) {
+    const auto& lay=layout();const auto cfg=tuning(style_);constexpr double dt=step;
+    // 1. The hand follows the mouse and carries node 0.
+    handVelocity_+=((cursor-hand_)*(handFrequency*handFrequency)-handVelocity_*(2*handFrequency))*dt;hand_+=handVelocity_*dt;
+    nodes_[0]=hand_;velocity_[0]=handVelocity_;
+    // 2. The wrist aims the handle along the stroke; at rest the lash simply hangs from it.
+    const double handSpeed=length(handVelocity_);
+    if(handSpeed>350) {
+        const double desired=std::atan2(handVelocity_.y,handVelocity_.x);
+        if(handSpeed>=1400) targetAngle_=desired;
+        else targetAngle_+=std::remainder(desired-targetAngle_,2*pi)*std::pow(handSpeed/2000,2)*(1-std::exp(-10*dt));
+        quietTime_=0;
+    } else quietTime_+=dt;
+    if(quietTime_>0.8) targetAngle_+=std::remainder(pi/2-targetAngle_,2*pi)*(1-std::exp(-4*dt));
+    std::array<Vec2,N+1> acceleration{};
+    for(std::size_t i=1;i<=N;++i) acceleration[i]={0,cfg.gravity};
+    {
+        const Vec2 r=nodes_[1]-hand_;const double radius2=std::max(dot(r,r),1e-9);
+        const double error=std::remainder(targetAngle_-std::atan2(r.y,r.x),2*pi),rate=cross(r,velocity_[1]-handVelocity_)/radius2;
+        acceleration[1]+=perp(r)*(wristFrequency*wristFrequency*error-2*wristDamping*wristFrequency*rate);
+    }
+    // 3. Bending: a torsional spring with internal friction at every joint of the lash.
+    const double stiffness=1/cfg.bendCompliance;
+    for(std::size_t i=1;i<N;++i) {
+        const Vec2 d1=nodes_[i]-nodes_[i-1],d2=nodes_[i+1]-nodes_[i];
+        const double l1=std::max(length(d1),1e-6),l2=std::max(length(d2),1e-6);
+        const double angle=std::atan2(cross(d1,d2),dot(d1,d2));
+        const Vec2 ga=perp(d1)/(l1*l1),gc=perp(d2)/(l2*l2),gb=(ga+gc)*-1.0;
+        const double rate=dot(ga,velocity_[i-1])+dot(gb,velocity_[i])+dot(gc,velocity_[i+1]);
+        const double k=stiffness*lay.bend[i]/(0.5*(l1+l2)),torque=-k*(angle+bendDamping*rate);
+        acceleration[i-1]+=ga*(torque*lay.inverse[i-1]);acceleration[i]+=gb*(torque*lay.inverse[i]);acceleration[i+1]+=gc*(torque*lay.inverse[i+1]);
+    }
+    for(std::size_t i=1;i<=N;++i) velocity_[i]+=acceleration[i]*dt;
+    // 4. Air: quadratic drag, much stronger across the rope than along it (implicit, unconditionally stable).
+    for(std::size_t i=1;i<=N;++i) {
+        const Vec2 tangent=unit(nodes_[std::min(i+1,N)]-nodes_[i-1]);
+        const Vec2 along=tangent*dot(velocity_[i],tangent),across=velocity_[i]-along;
+        const double q=cfg.drag*lay.drag[i];
+        const double across2=length(across)/crackSpeed;
+        const double fn=1/(1+(cfg.damping+q*length(across)*(1+across2*across2))*dt),ft=1/(1+(cfg.damping+tangentialDrag*q*length(along))*dt);
+        velocity_[i]=across*fn+along*ft;
+    }
+    // 5. Constraints (SHAKE/RATTLE): exact inextensibility through direct tridiagonal solves.
+    solveVelocities();
+    for(std::size_t i=1;i<=N;++i) nodes_[i]+=velocity_[i]*dt;
+    solvePositions(3);
+    for(std::size_t i=1;i<=N;++i) {
+        const double v=length(velocity_[i]);if(v>speedLimit) velocity_[i]=velocity_[i]*(speedLimit/v);
+    }
+    if(!std::isfinite(nodes_[N].x+nodes_[N].y+velocity_[N].x+velocity_[N].y+nodes_[1].x+nodes_[1].y)) {reset(cursor);return;}
+    tipVelocity_=velocity_[N];tipSpeed_=length(tipVelocity_);
+}
+void Whip::updateCurve(Vec2 cursor,double attachment) {
+    // Tangents: the handle direction continues through its end node; elsewhere central differences.
+    std::array<Vec2,solverSegments+1> tangent{};
+    tangent[0]=tangent[1]=unit(nodes_[1]-nodes_[0]);
+    for(std::size_t i=2;i<solverSegments;++i) tangent[i]=unit(nodes_[i+1]-nodes_[i-1]);
+    tangent[solverSegments]=unit(nodes_[solverSegments]-nodes_[solverSegments-1]);
+    for(std::size_t i=0;i<=segments;++i) {
+        const double arc=static_cast<double>(i)*totalLength/segments;
+        if(arc<=handleLength) {position_[i]=mix(nodes_[0],nodes_[1],arc/handleLength);continue;}
+        const double u=(arc-handleLength)/tailLinkLength;
+        const auto k=std::min(static_cast<std::size_t>(u),solverSegments-2)+1;const double t=u-static_cast<double>(k-1);
+        const Vec2 a=nodes_[k],b=nodes_[k+1];const double chord=length(b-a),t2=t*t,t3=t2*t;
+        position_[i]=a*(2*t3-3*t2+1)+tangent[k]*(chord*(t3-2*t2+t))+b*(-2*t3+3*t2)+tangent[k+1]*(chord*(t3-t2));
+    }
+    // The curve is built around the (smoothed) hand. Exact changes the held point by a rigid translation of
+    // the curve so that the held point sits on the cursor; rest lengths and relative velocities are
+    // identical in both modes. At low speed the small difference between mouse and hand (pixel
+    // quantisation) is faded out towards the tip, so the lash does not shimmer with the cursor grid.
     const double coordinate=attachment*segments;const auto a=std::min(static_cast<std::size_t>(coordinate),segments-1);
-    const auto offset=cursor-mix(position_[a],position_[a+1],coordinate-a);
-    for(auto& point:position_) point+=offset;
+    const Vec2 shift=hand_-mix(position_[a],position_[a+1],coordinate-a),lag=cursor-hand_;
+    const double rigid=std::clamp(attachment/0.25,0.0,1.0),blend=rigid*rigid*(3-2*rigid);
+    for(std::size_t i=0;i<=segments;++i) position_[i]+=shift+lag*(blend+(1-blend)*(1-static_cast<double>(i)/segments));
 }
 double Whip::motion() const {
-    double energy=0;for(std::size_t i=0;i<=segments;++i) energy+=length(position_[i]-previous_[i])/step;
-    return energy/(segments+1);
+    double speed=0;for(const auto& v:velocity_) speed+=length(v);
+    return speed/(solverSegments+1);
+}
+double Whip::stretchError() const {
+    double worst=0;
+    for(std::size_t i=0;i<solverSegments;++i) worst=std::max(worst,std::abs(length(nodes_[i+1]-nodes_[i])-restLength(i))/restLength(i));
+    return worst;
 }
 void ContactValidator::arm(const GestureEvent& stop,Mode mode) {
     cancel();
@@ -155,12 +260,12 @@ void ContactValidator::arm(const GestureEvent& stop,Mode mode) {
 }
 std::optional<ImpactEvent> ContactValidator::update(double time,const Whip& whip,Vec2 cursor,bool held) {
     if(!stop_) return {};
-    if(held || time<stop_->time || time-stop_->time>0.080 || length(cursor-stop_->point)>8) {cancel();return {};}
+    if(held || time<stop_->time || time-stop_->time>contactWindow || length(cursor-stop_->point)>8) {cancel();return {};}
     const auto offset=whip.tip()-whip.points().front(),velocity=whip.tipVelocity()-whip.handleVelocity();
     const double reach=length(offset),forward=dot(velocity,stop_->direction);
     // This is a physical contact gate, not a target radius or a tip-position
     // correction. A folded, trailing, stationary or inward-moving tip cannot click.
-    if(reach<Whip::totalLength*0.84 || reach>Whip::totalLength*1.06 || dot(offset,stop_->direction)<Whip::totalLength*0.35 || forward<2200 || dot(velocity,offset)<=0) return {};
+    if(reach<Whip::totalLength*0.80 || reach>Whip::totalLength*1.06 || dot(offset,stop_->direction)<Whip::totalLength*0.30 || forward<2200 || dot(velocity,offset)<=0) return {};
     const auto stop=*stop_;cancel();
     return ImpactEvent{stop.id,time,stop.time,length(velocity),mode_==Mode::Exact?stop.point:whip.tip()};
 }
@@ -185,7 +290,7 @@ std::optional<PcmWave> parseWave(std::span<const std::uint8_t> bytes) {
 }
 void CoilAnimation::begin(const Points& visible,Vec2 handle,bool coil,double time) {
     source_=visible;start_=time;duration_=coil?0.64:0.46;initialized_=true;coiling_=coil;
-    origin_=cursor_=handle;motion_=accumulator_=0;
+    origin_=cursor_=anchor_=handle;anchorVelocity_={};motion_=accumulator_=0;angle_=spin_=0;
     constexpr double pi=3.14159265358979323846;
     const Vec2 center=handle+Vec2{41.6,54.4};
     for(std::size_t i=0;i<=Whip::segments;++i) {
@@ -195,41 +300,35 @@ void CoilAnimation::begin(const Points& visible,Vec2 handle,bool coil,double tim
             coil_[i]=center+Vec2{std::cos(angle)*radius,std::sin(angle)*radius};
         }
     }
-    constexpr std::array<std::size_t,8> indices{0,3,13,23,33,43,53,64};
-    for(std::size_t i=0;i<indices.size();++i) {rest_[i]=coil_[indices[i]]-handle;bodies_[i]=previousBodies_[i]=coil_[indices[i]];}
 }
 void CoilAnimation::follow(Vec2 cursor,double elapsed) {
     if(!initialized_ || !coiling_) return;
-    cursor_=cursor;accumulator_+=std::clamp(elapsed,0.0,0.035);constexpr double dt=1.0/240;
+    // The ring hangs from the end of the handle like a rigid pendulum. The pivot is the hand, so the
+    // ring feels its acceleration as an extra sideways "gravity".
+    constexpr double dt=1.0/240,frequency=110,reach=84,gravity=3000,damping=1.6;
+    cursor_=cursor;accumulator_+=std::clamp(elapsed,0.0,0.035);
     while(accumulator_>=dt) {
-        accumulator_-=dt;motion_=0;
-        for(std::size_t i=0;i<bodies_.size();++i) {
-            const auto before=bodies_[i],target=cursor+rest_[i];
-            if(i<2) {bodies_[i]=previousBodies_[i]=target;continue;}
-            auto velocity=(bodies_[i]-previousBodies_[i])*std::exp(-7.0*dt);previousBodies_[i]=before;
-            bodies_[i]+=velocity+((target-bodies_[i])*85+Vec2{0,500})*(dt*dt);
-            const auto offset=bodies_[i]-target;const double distance=length(offset);if(distance>75) bodies_[i]=target+offset*(75/distance);
-            motion_=std::max(motion_,length(bodies_[i]-before)/dt);
-        }
-        // Preserve the rolled shape while the free masses trail the two pins.
-        for(int pass=0;pass<4;++pass) for(std::size_t i=0;i+1<bodies_.size();++i) {
-            const auto delta=bodies_[i+1]-bodies_[i];const double distance=length(delta),rest=length(rest_[i+1]-rest_[i]);if(distance<1e-6) continue;
-            const double a=i<2?0.0:1.0,b=i+1<2?0.0:1.0;if(a+b==0) continue;
-            const auto correction=delta*((distance-rest)/(distance*(a+b))*0.35);bodies_[i]+=correction*a;bodies_[i+1]-=correction*b;
-        }
+        accumulator_-=dt;
+        const Vec2 pull=(cursor-anchor_)*(frequency*frequency)-anchorVelocity_*(2*frequency);
+        anchorVelocity_+=pull*dt;anchor_+=anchorVelocity_*dt;
+        const double sine=std::sin(angle_),cosine=std::cos(angle_);
+        spin_+=(-(gravity*sine+pull.x*cosine-pull.y*sine)/reach-damping*spin_)*dt;angle_+=spin_*dt;
+        angle_=std::clamp(angle_,-2.8,2.8);
+        if(std::abs(angle_)<0.02 && std::abs(spin_)<0.06) angle_=spin_=0; // settles instead of ringing forever
     }
+    motion_=std::abs(spin_)*reach+length(anchorVelocity_);
 }
 CoilAnimation::Points CoilAnimation::sample(const Points& live,double time) const {
     if(!initialized_) return live;
     const double t=std::clamp((time-start_)/duration_,0.0,1.0),ease=t*t*t*(10+t*(-15+6*t));
     Points target=coiling_?coil_:live;Points result;
     if(coiling_) {
-        constexpr std::array<std::size_t,8> indices{0,3,13,23,33,43,53,64};
+        const Vec2 shift=cursor_-origin_,restPivot=origin_+Vec2{41.6,0},pivot=restPivot+shift;
+        const double sine=std::sin(angle_),cosine=std::cos(angle_);
         for(std::size_t i=0;i<target.size();++i) {
-            std::size_t k=0;while(k+2<indices.size() && i>indices[k+1]) ++k;
-            const double part=static_cast<double>(i-indices[k])/(indices[k+1]-indices[k]);
-            const auto a=bodies_[k]-(origin_+rest_[k]),b=bodies_[k+1]-(origin_+rest_[k+1]);
-            target[i]+=mix(a,b,part);
+            if(i<=3) {target[i]+=shift;continue;} // the handle stays in the hand
+            const Vec2 r=coil_[i]-restPivot;
+            target[i]=pivot+Vec2{r.x*cosine+r.y*sine,-r.x*sine+r.y*cosine};
         }
     }
     for(std::size_t i=0;i<result.size();++i) {
